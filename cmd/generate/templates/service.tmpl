@@ -1,0 +1,102 @@
+package [[.Package]]
+
+import (
+	"context"
+	"time"
+
+	"[[.ModulePath]]/modules/common"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.uber.org/zap"
+)
+
+type [[.Domain]]Service interface {
+	GetAll(ctx context.Context, filter common.Filter) ([][[.Domain]]Response, common.Pagination, error)
+	GetByID(ctx context.Context, id string) ([[.Domain]]Response, error)
+	Create(ctx context.Context, req *[[.Domain]]Request) ([[.Domain]]Response, error)
+	Update(ctx context.Context, id string, req *[[.Domain]]Request) ([[.Domain]]Response, error)
+	Delete(ctx context.Context, id string) error
+}
+
+type [[.Domain]]ServiceImpl struct {
+	repo   [[.Domain]]Repository
+	logger *zap.Logger
+}
+
+func New[[.Domain]]Service(repo [[.Domain]]Repository, logger *zap.Logger) [[.Domain]]Service {
+	return &[[.Domain]]ServiceImpl{repo: repo, logger: logger}
+}
+
+func (s *[[.Domain]]ServiceImpl) mapToResponse(e [[.Domain]]) [[.Domain]]Response {
+	return [[.Domain]]Response{
+		ID: e.ID.Hex(),
+[[range .Fields]][[if .IsTime]]		[[.Name]]: e.[[.Name]].Format(time.RFC3339),
+[[else]]		[[.Name]]: e.[[.Name]],
+[[end]][[end]]		CreatedAt: e.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func (s *[[.Domain]]ServiceImpl) GetAll(ctx context.Context, filter common.Filter) ([][[.Domain]]Response, common.Pagination, error) {
+	data, err := s.repo.GetAll(ctx, filter)
+	if err != nil {
+		return nil, common.Pagination{}, err
+	}
+	total, err := s.repo.Count(ctx, filter)
+	if err != nil {
+		return nil, common.Pagination{}, err
+	}
+
+	responses := make([][[.Domain]]Response, len(data))
+	for i, item := range data {
+		responses[i] = s.mapToResponse(item)
+	}
+
+	pagination := common.Pagination{
+		Page:       filter.Page,
+		Limit:      filter.Limit,
+		TotalItems: total,
+		TotalPages: (total + int64(filter.Limit) - 1) / int64(filter.Limit),
+	}
+
+	return responses, pagination, nil
+}
+
+func (s *[[.Domain]]ServiceImpl) GetByID(ctx context.Context, id string) ([[.Domain]]Response, error) {
+	data, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return [[.Domain]]Response{}, err
+	}
+	return s.mapToResponse(data), nil
+}
+
+func (s *[[.Domain]]ServiceImpl) Create(ctx context.Context, req *[[.Domain]]Request) ([[.Domain]]Response, error) {
+	now := time.Now()
+	entity := &[[.Domain]]{
+		ID: bson.NewObjectID(),
+[[range .Fields]]		[[.Name]]: req.[[.Name]],
+[[end]]		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.repo.Create(ctx, entity); err != nil {
+		return [[.Domain]]Response{}, err
+	}
+	return s.mapToResponse(*entity), nil
+}
+
+func (s *[[.Domain]]ServiceImpl) Update(ctx context.Context, id string, req *[[.Domain]]Request) ([[.Domain]]Response, error) {
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return [[.Domain]]Response{}, err
+	}
+[[range .Fields]]	existing.[[.Name]] = req.[[.Name]]
+[[end]]	existing.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, &existing); err != nil {
+		return [[.Domain]]Response{}, err
+	}
+	return s.mapToResponse(existing), nil
+}
+
+func (s *[[.Domain]]ServiceImpl) Delete(ctx context.Context, id string) error {
+	return s.repo.Delete(ctx, id)
+}

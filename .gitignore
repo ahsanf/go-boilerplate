@@ -1,0 +1,43 @@
+# Binaries
+server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+*.out
+
+# Go build cache
+/vendor/
+
+# Environment — never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# Swagger generated output (regenerate with: swag init)
+docs/swagger.json
+docs/swagger.yaml
+docs/docs.go
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+
+# Certificates & credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.json
+!.env.example
+
+# Logs
+*.log

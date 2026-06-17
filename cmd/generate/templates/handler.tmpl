@@ -1,0 +1,148 @@
+package [[.Package]]
+
+import (
+	"[[.ModulePath]]/modules/common"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+type [[.Domain]]HandlerImpl struct {
+	service   [[.Domain]]Service
+	validator *common.XValidator
+}
+
+func New[[.Domain]]Handler(app *fiber.App, service [[.Domain]]Service) {
+	h := &[[.Domain]]HandlerImpl{
+		service:   service,
+		validator: common.NewXValidator(),
+	}
+
+	api := app.Group("/[[.DomainKebab]]s")
+	api.Get("", h.GetAll)
+	api.Get("/:id", h.GetByID)
+	api.Post("", h.Create)
+	api.Put("/:id", h.Update)
+	api.Delete("/:id", h.Delete)
+}
+
+// GetAll godoc
+// @Summary     Get all [[.DomainKebab]]s
+// @Tags        [[.DomainKebab]]
+// @Accept      json
+// @Produce     json
+// @Param       q         query  string false "Search term"
+// @Param       page      query  int    false "Page"     default(1)
+// @Param       limit     query  int    false "Limit"    default(10)
+// @Param       sort_by   query  string false "Sort by field"
+// @Param       sort_type query  string false "Sort type (asc|desc)" default(desc)
+// @Success     200  {object}  common.ListResponse{data=[][[.Domain]]Response}
+// @Failure     500  {object}  common.StandardError
+// @Router      /[[.DomainKebab]]s [get]
+func (h *[[.Domain]]HandlerImpl) GetAll(c *fiber.Ctx) error {
+	filter := common.Filter{
+		Page:     c.QueryInt("page", 1),
+		Limit:    c.QueryInt("limit", 10),
+		Search:   c.Query("q"),
+		SortBy:   c.Query("sort_by", "updated_at"),
+		SortType: c.Query("sort_type", "desc"),
+	}
+
+	data, pagination, err := h.service.GetAll(c.Context(), filter)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(common.ListResponse{Message: "success", Data: data, Pagination: pagination})
+}
+
+// GetByID godoc
+// @Summary     Get [[.DomainKebab]] by ID
+// @Tags        [[.DomainKebab]]
+// @Accept      json
+// @Produce     json
+// @Param       id   path  string  true  "[[.Domain]] ID"
+// @Success     200  {object}  common.Response{data=[[.Domain]]Response}
+// @Failure     404  {object}  common.StandardError
+// @Failure     500  {object}  common.StandardError
+// @Router      /[[.DomainKebab]]s/{id} [get]
+func (h *[[.Domain]]HandlerImpl) GetByID(c *fiber.Ctx) error {
+	data, err := h.service.GetByID(c.Context(), c.Params("id"))
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, err.Error())
+	}
+
+	return c.JSON(common.Response{Message: "success", Data: data})
+}
+
+// Create godoc
+// @Summary     Create a [[.DomainKebab]]
+// @Tags        [[.DomainKebab]]
+// @Accept      json
+// @Produce     json
+// @Param       body  body  [[.Domain]]Request  true  "Request body"
+// @Success     201   {object}  common.Response{data=[[.Domain]]Response}
+// @Failure     400   {object}  common.StandardError
+// @Failure     500   {object}  common.StandardError
+// @Router      /[[.DomainKebab]]s [post]
+func (h *[[.Domain]]HandlerImpl) Create(c *fiber.Ctx) error {
+	var req [[.Domain]]Request
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	if errs := h.validator.ValidateAndReturnError(&req); errs != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errs)
+	}
+
+	data, err := h.service.Create(c.Context(), &req)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(common.Response{Message: "created", Data: data})
+}
+
+// Update godoc
+// @Summary     Update a [[.DomainKebab]]
+// @Tags        [[.DomainKebab]]
+// @Accept      json
+// @Produce     json
+// @Param       id    path  string  true  "[[.Domain]] ID"
+// @Param       body  body  [[.Domain]]Request  true  "Request body"
+// @Success     200   {object}  common.Response{data=[[.Domain]]Response}
+// @Failure     400   {object}  common.StandardError
+// @Failure     404   {object}  common.StandardError
+// @Failure     500   {object}  common.StandardError
+// @Router      /[[.DomainKebab]]s/{id} [put]
+func (h *[[.Domain]]HandlerImpl) Update(c *fiber.Ctx) error {
+	var req [[.Domain]]Request
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	if errs := h.validator.ValidateAndReturnError(&req); errs != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(errs)
+	}
+
+	data, err := h.service.Update(c.Context(), c.Params("id"), &req)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(common.Response{Message: "updated", Data: data})
+}
+
+// Delete godoc
+// @Summary     Delete a [[.DomainKebab]]
+// @Tags        [[.DomainKebab]]
+// @Accept      json
+// @Produce     json
+// @Param       id  path  string  true  "[[.Domain]] ID"
+// @Success     200  {object}  common.Response
+// @Failure     500  {object}  common.StandardError
+// @Router      /[[.DomainKebab]]s/{id} [delete]
+func (h *[[.Domain]]HandlerImpl) Delete(c *fiber.Ctx) error {
+	if err := h.service.Delete(c.Context(), c.Params("id")); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(common.Response{Message: "deleted"})
+}

@@ -1,0 +1,25 @@
+package [[.Package]]
+
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+)
+
+type [[.Domain]] struct {
+	ID        bson.ObjectID `bson:"_id"`
+[[range .Fields]]	[[.Name]] [[.Type]] `bson:"[[.BsonTag]]"`
+[[end]]	CreatedAt time.Time `bson:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at"`
+}
+
+type [[.Domain]]Request struct {
+[[range .Fields]]	[[.Name]] [[.ReqType]] `validate:"[[.ValidTag]]" json:"[[.JsonTag]]"`
+[[end]]}
+
+type [[.Domain]]Response struct {
+	ID string `json:"id"`
+[[range .Fields]]	[[.Name]] [[.RespType]] `json:"[[.JsonTag]]"`
+[[end]]	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
