@@ -262,28 +262,23 @@ func main() {
 		{"handler.tmpl", "handler.go"},
 	}
 
-	// If --file was provided and entity.go should come from there, skip entity template
-	// and copy/move the source file instead.
-	entitySrc := *entityFile
-	skipEntityTmpl := entitySrc != ""
-
 	for _, of := range files {
-		if of.name == "entity.go" && skipEntityTmpl {
-			dst := filepath.Join(outputDir, "entity.go")
-			if err := moveAndRepackage(entitySrc, dst, pkg); err != nil {
-				fmt.Fprintf(os.Stderr, "error moving entity file: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("moved    %s → %s\n", entitySrc, dst)
-			continue
-		}
-
 		outPath := filepath.Join(outputDir, of.name)
 		if err := renderTemplate(of.tmpl, data, outPath); err != nil {
 			fmt.Fprintf(os.Stderr, "error generating %s: %v\n", outPath, err)
 			os.Exit(1)
 		}
 		fmt.Printf("created  %s\n", outPath)
+	}
+
+	// Remove the source entity file now that fields have been extracted and
+	// entity.go has been generated from the template.
+	if *entityFile != "" {
+		if err := os.Remove(*entityFile); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "warning: could not remove source file %s: %v\n", *entityFile, err)
+		} else {
+			fmt.Printf("removed  %s (fields extracted)\n", *entityFile)
+		}
 	}
 
 	fmt.Println()
@@ -298,31 +293,3 @@ func main() {
 	fmt.Println("  3. Run: go mod tidy && swag init")
 }
 
-// moveAndRepackage reads src, rewrites its package declaration to pkg, writes
-// to dst, then removes src (falling back gracefully if src == dst).
-func moveAndRepackage(src, dst, pkg string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-
-	content := string(data)
-	// Replace the first "package <anything>" line with the correct package name.
-	lines := strings.SplitN(content, "\n", -1)
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "package ") {
-			lines[i] = "package " + pkg
-			break
-		}
-	}
-	content = strings.Join(lines, "\n")
-
-	if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
-		return err
-	}
-	if src != dst {
-		os.Remove(src) // best-effort cleanup
-	}
-	return nil
-}

@@ -1,16 +1,28 @@
 # CLAUDE.md — Go Boilerplate Guidelines
 
+## Security Rules
+
+> **NEVER share, paste, or attach any `.env` file, secret key, connection string, credential file, or token value when prompting an AI assistant.**
+>
+> - Use `.env.example` with placeholder values as the only reference for environment variable names.
+> - If a real value is accidentally included in a prompt, rotate the secret immediately.
+> - AI assistants must not ask for, suggest logging, or echo back any environment variable values.
+
+---
+
 ## Stack
 
-| Layer       | Library                              |
-|-------------|--------------------------------------|
-| HTTP        | `github.com/gofiber/fiber/v2`        |
-| Logging     | `go.uber.org/zap`                    |
-| Database    | `go.mongodb.org/mongo-driver/v2`     |
-| Messaging   | `cloud.google.com/go/pubsub`         |
+| Layer       | Library                                  |
+|-------------|------------------------------------------|
+| HTTP        | `github.com/gofiber/fiber/v2`            |
+| Logging     | `go.uber.org/zap` (wrapped as `AppLogger`) |
+| Database    | `go.mongodb.org/mongo-driver/v2`         |
+| Auth        | `firebase.google.com/go/v4` + `github.com/golang-jwt/jwt/v4` |
+| RBAC        | `github.com/casbin/casbin/v2`            |
+| Cache       | `github.com/redis/go-redis/v9`           |
+| Messaging   | `cloud.google.com/go/pubsub`             |
 | Validation  | `github.com/go-playground/validator/v10` |
-| JWT         | `github.com/golang-jwt/jwt/v4`       |
-| Config      | `github.com/joho/godotenv`           |
+| Config      | `github.com/joho/godotenv`               |
 | Swagger     | `github.com/gofiber/swagger` + `github.com/swaggo/swag` |
 
 ---
@@ -20,24 +32,38 @@
 ```
 app.go                          ← Fiber bootstrap, DI wiring, graceful shutdown
 utils/
+  config.go                     ← AppConfig struct, LoadConfig(), global Cfg
+  logger.go                     ← InitLogger(), AppLogger, LogInfo/Warn/Error/Fatal/Sync helpers
   mongodb.go                    ← ConnectDB(), global MongoClient
-  zap.go                        ← InitLogger(), global Logger (*zap.Logger)
+  redis.go                      ← InitRedis(), CacheSet/Get/Del helpers
+  firebase.go                   ← InitFirebase(), global FirebaseAuth
   pubsub.go                     ← InitPubSub(), global PubSubClient
+  casbin.go                     ← SetPolicyLoader(), CheckPermissions()
+  token.go                      ← SignToken(), ValidateToken() — HS256 JWT
   error_handler.go              ← GlobalErrorHandler (Fiber error handler)
-  pagination.go                 ← CalculatePagination()
-  token.go                      ← JWT sign/validate helpers
+  apperror/
+    error.go                    ← AppError type
+    http_error.go               ← apperror.New("msg").Unauthorized() builder
+    lookup_error.go             ← LookupError field-level validation helpers
 modules/
   common/
-    entity.go                   ← Filter, Response, ListResponse, Pagination, StandardError
+    entity.go                   ← Filter, Response, ListResponse, Pagination, AuthUser
     validator.go                ← XValidator (wraps go-playground/validator)
-    middleware.go               ← AuthTokenMiddleware, HybridTokenMiddleware
+    middleware.go               ← GlobalAuthMiddleware, AuthTokenMiddleware, HybridTokenMiddleware
+    permission.go               ← PermissionMiddleware (Casbin RBAC)
+    logging.go                  ← LoggingMiddleware, GetTraceID()
+    pagination.go               ← CalculatePagination()
   {domain}/
-    {subdomain}/
-      entity.go                 ← Mongo structs, Request/Response types
-      repository.go             ← Interface + impl, raw Mongo queries
-      service.go                ← Interface + impl, business logic
-      handler.go                ← Fiber routes, Swagger annotations
-      subscriber.go             ← (optional) PubSub subscription handler
+    entity.go                   ← Mongo struct, Request/Response types
+    repository.go               ← Interface + impl, raw Mongo queries
+    service.go                  ← Interface + impl, business logic
+    handler.go                  ← Fiber routes, Swagger annotations
+    subscriber.go               ← (optional) PubSub subscription handler
+cmd/
+  generate/
+    main.go                     ← CRUD generator CLI (--domain, --file, --out)
+    templates/                  ← entity / repository / service / handler .tmpl files
+docs/                           ← Swagger output (generated — do not edit)
 ```
 
 Every domain module is **self-contained**: entity → repository → service → handler. No circular imports across modules (pass interfaces, not concrete types).
@@ -74,7 +100,7 @@ type FooResponse struct {
 - Use `bson.ObjectID` for `_id` — never `primitive.ObjectID` from v1.
 - Response IDs are always `string` (`oid.Hex()`). Never expose raw `bson.ObjectID` in JSON.
 - Timestamps in responses use `time.RFC3339`.
-- If a query joins collections (e.g. lookup), add a separate `VFoo` view struct with the extra joined fields. The view struct reads from a Mongo view (`v_foos`), the write operations target the real collection (`foos`).
+- If a query joins collections, add a separate `VFoo` view struct. The view struct reads from a Mongo view (`v_foos`); write operations target the real collection (`foos`).
 
 ---
 
@@ -103,11 +129,12 @@ func NewFooRepository(db *mongo.Database) FooRepository {
 - All methods receive `ctx context.Context` as first arg — propagate it to every Mongo call.
 - Use `bson.ObjectIDFromHex(id)` and return an error immediately if it fails.
 - Return empty slice (not nil) when no documents found: `if results == nil { return []Foo{}, nil }`.
-- For bulk writes use `mongo.BulkWrite` with `WriteModel` slice.
-- Collection name constants live at the top of repository.go:
+- Collection name constant at the top of repository.go:
   ```go
   const collectionName = "foos"
   ```
+- Search filter: only set `$or` when you have actual conditions — an empty `bson.A{}` causes a MongoDB error.
+- Sorting: pull `bson.D{{Key: field, Value: dir}}` into a named variable before passing to `SetSort`.
 
 ---
 
@@ -115,7 +142,7 @@ func NewFooRepository(db *mongo.Database) FooRepository {
 
 ```go
 type FooService interface {
-    GetAll(ctx context.Context, filter common.Filter) ([]FooResponse, error)
+    GetAll(ctx context.Context, filter common.Filter) ([]FooResponse, common.Pagination, error)
     GetByID(ctx context.Context, id string) (FooResponse, error)
     Create(ctx context.Context, req *FooRequest) (FooResponse, error)
     Update(ctx context.Context, id string, req *FooRequest) (FooResponse, error)
@@ -123,18 +150,21 @@ type FooService interface {
 }
 
 type FooServiceImpl struct {
-    repo FooRepository
+    repo   FooRepository
+    logger *utils.AppLogger
 }
 
-func NewFooService(repo FooRepository) FooService {
-    return &FooServiceImpl{repo: repo}
+func NewFooService(repo FooRepository, logger *utils.AppLogger) FooService {
+    return &FooServiceImpl{repo: repo, logger: logger}
 }
 ```
 
-- Service constructors accept **interfaces**, not concrete types. This keeps modules decoupled.
-- Mapping from domain struct to response happens in a private `mapToResponse(f Foo) FooResponse` method on the service.
-- Business logic (stock calculations, status transitions, cross-module calls) belongs here, not in the repository.
-- When injecting dependencies from another module, accept that module's **service interface** — never its repository.
+- Service constructors accept **interfaces**, not concrete types.
+- Inject `*utils.AppLogger` (not `*zap.Logger`) for structured logging in services.
+- Mapping from domain struct to response happens in a private `mapToResponse(f Foo) FooResponse` method.
+- Business logic belongs here, not in the repository.
+- When injecting from another module, accept that module's **service interface** — never its repository.
+- Wire with `utils.Log`: `foo.NewFooService(fooRepo, utils.Log)`.
 
 ---
 
@@ -157,13 +187,13 @@ func NewFooHandler(app *fiber.App, service FooService) {
 ```
 
 - Parse body with `c.BodyParser(&req)`, then validate with `h.validator.ValidateAndReturnError(&req)`.
-- Return errors with `fiber.NewError(statusCode, err.Error())` — GlobalErrorHandler formats them.
-- Use standard Fiber JSON response shape:
+- Return errors with `apperror.New("msg").NotFound()` (or the relevant builder method) — `GlobalErrorHandler` formats the structured envelope automatically.
+- Standard Fiber JSON response shape:
   ```go
   return c.JSON(fiber.Map{"message": "...", "data": data})
   return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "...", "data": data})
   ```
-- All handlers must have Swagger `// @Summary`, `// @Tags`, `// @Param`, `// @Success`, `// @Failure`, `// @Security ApiKeyAuth`, `// @Router` annotations.
+- All handlers must have full Swagger annotations: `@Summary`, `@Tags`, `@Param`, `@Success`, `@Failure`, `@Security ApiKeyAuth`, `@Router`.
 
 ---
 
@@ -173,7 +203,7 @@ func NewFooHandler(app *fiber.App, service FooService) {
 type FooSubscriber struct {
     client  *pubsub.Client
     service FooService
-    logger  *zap.Logger
+    logger  *zap.Logger   // raw *zap.Logger for library compat; use utils.Logger
 }
 
 func NewFooSubscriber(client *pubsub.Client, service FooService, logger *zap.Logger) *FooSubscriber {
@@ -201,31 +231,42 @@ func (s *FooSubscriber) Listen(ctx context.Context, subscriptionID string) error
 
 - **Always Ack or Nack** — never silently drop a message.
 - Nack on unmarshal failure and handler error so the message is redelivered (ensure idempotency in the service layer).
-- Use `zap.Logger` for structured logging — never `log.Println` in subscriber code.
+- Subscribers accept `*zap.Logger` (use `utils.Logger`) because PubSub callbacks are goroutines without a Fiber context.
 - Start subscribers in goroutines inside `app.go`, stopped via context cancellation on shutdown.
 
 ---
 
-## Logging with Zap
+## Logging (`utils/logger.go`)
 
-Initialize a global logger in `utils/zap.go`:
+`AppLogger` wraps zap and exposes the same API as the TypeScript logger:
 
 ```go
-var Logger *zap.Logger
-
-func InitLogger() {
-    cfg := zap.NewProductionConfig()
-    cfg.EncoderConfig.TimeKey = "timestamp"
-    cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-    Logger, _ = cfg.Build()
-}
+// Defaults message to "call {funcName} from {className}"
+utils.LogInfo("GetAll", "ProductService", traceId)
+utils.LogWarn("Create", "ProductService", traceId)
+utils.LogError("Update", "ProductService", traceId, err.Error())
+utils.LogFatal("main", "app", "", "cannot connect to database")
 ```
 
-Usage rules:
-- Pass `*zap.Logger` into constructors that need it (subscribers, background workers). Do **not** use the global in library code.
-- Use structured fields: `zap.String("key", val)`, `zap.Error(err)`, `zap.Int("count", n)`.
-- In Fiber handlers use `fiber/v2/log` for request-scoped logs; use `utils.Logger` for application-level events.
-- Call `Logger.Sync()` during graceful shutdown.
+- **Console** — colored, human-readable, all levels ≥ Debug.
+- **File** — JSON, info+ only, written to `logs/YYYY-M-D_api.log` (daily, created at startup).
+- `utils.Logger` (`*zap.Logger`) is still set for libraries that expect raw zap (e.g. PubSub subscribers).
+- Call `utils.LogSync()` during graceful shutdown.
+
+### LoggingMiddleware
+
+Place `common.LoggingMiddleware` **before** route groups in `app.go`. It:
+
+1. Generates a UUID v4 trace ID per request.
+2. Stores it in `c.Locals("trace_id")`.
+3. Logs URL, query params, route params, and request body via `utils.LogInfo`.
+
+Retrieve the trace ID in handlers or services:
+
+```go
+traceId := common.GetTraceID(c)
+utils.LogInfo("Create", "ProductService", traceId, "creating product")
+```
 
 ---
 
@@ -242,15 +283,13 @@ type Filter struct {
     SortType string `json:"sort_type"`  // "asc" | "desc"
 }
 
-type Response struct {
-    Message string      `json:"message"`
-    Data    interface{} `json:"data"`
-}
-
-type ListResponse struct {
-    Message    string      `json:"message"`
-    Data       interface{} `json:"data"`
-    Pagination Pagination  `json:"pagination"`
+type AuthUser struct {
+    Email      string
+    ObaRole    []string
+    StaffObaId string
+    WorkunitId string
+    Platform   string
+    Token      string
 }
 
 type Pagination struct {
@@ -259,22 +298,34 @@ type Pagination struct {
     TotalItems int64 `json:"total_items"`
     TotalPages int64 `json:"total_pages"`
 }
-
-type StandardError struct {
-    Code    int    `json:"code"`
-    Message string `json:"message"`
-}
 ```
 
 ### validator.go
 
-`XValidator` wraps `go-playground/validator`. Register JSON field names via `RegisterTagNameFunc` so validation errors report JSON keys, not Go struct field names. Call `ValidateAndReturnError` in handlers before calling the service.
+`XValidator` wraps `go-playground/validator`. Registers JSON field names via `RegisterTagNameFunc` so errors report JSON keys. Call `ValidateAndReturnError` in handlers before the service.
 
 ### middleware.go
 
-- `AuthTokenMiddleware` — validates custom JWT, sets `user_id`, `email` in `c.Locals`.
-- `GlobalAuthMiddleware` / `HybridTokenMiddleware` — Firebase ID token first, falls back to RS256 service-account JWT; sets `c.Locals("auth_user", common.AuthUser{...})`.
-- All protected route groups pass a middleware: `app.Group("/resource", common.AuthTokenMiddleware)`.
+- `GlobalAuthMiddleware` — Firebase ID token first, falls back to RS256 service-account JWT. Parses optional 4th JWT segment for platform metadata. Sets `c.Locals("auth_user", AuthUser{...})`.
+- `AuthTokenMiddleware` — HS256 internal JWT. Sets `c.Locals("user_id", ...)` and `c.Locals("email", ...)`.
+- `HybridTokenMiddleware` — alias for `GlobalAuthMiddleware`.
+
+### permission.go
+
+`PermissionMiddleware` — Casbin RBAC check placed after `GlobalAuthMiddleware`:
+1. `STATIC_TOKEN` bypass.
+2. `SKIP_PERMISSION=true` bypass.
+3. `SUPERADMIN` role bypasses policy.
+4. Checks `(role, path, method)` against the policy loaded via `utils.SetPolicyLoader`.
+5. Returns `403` if denied.
+
+### logging.go
+
+`LoggingMiddleware` + `GetTraceID(c *fiber.Ctx) string` — see Logging section above.
+
+### pagination.go
+
+`CalculatePagination()` lives here (not in `utils`) to avoid import cycles.
 
 ---
 
@@ -283,32 +334,48 @@ type StandardError struct {
 ```go
 func main() {
     godotenv.Load()
+    utils.LoadConfig()
     utils.InitLogger()
-    defer utils.Logger.Sync()
+    defer utils.LogSync()
 
     utils.ConnectDB()
-    utils.InitPubSub(context.Background())
-    defer utils.PubSubClient.Close()
+    utils.InitRedis()
 
-    db := utils.MongoClient.Database(os.Getenv("DB_NAME"))
+    ctx := context.Background()
+
+    if utils.Cfg.PubSubProjectID != "" {
+        utils.InitPubSub(ctx)
+        defer utils.PubSubClient.Close()
+    }
+
+    if utils.Cfg.GoogleCredPath != "" || utils.Cfg.ServiceAccount != "" {
+        utils.InitFirebase(ctx)
+    }
+
+    db := utils.MongoClient.Database(utils.Cfg.DBName)
+
+    // Register Casbin policy loader (load CSV from DB or Redis)
+    // utils.SetPolicyLoader(func(ctx context.Context) (string, error) {
+    //     return myAdapter.ToCasbinCSV(ctx)
+    // })
+
     app := fiber.New(fiber.Config{ErrorHandler: utils.GlobalErrorHandler})
     app.Use(cors.New())
-    app.Use(logger.New())
+    app.Use(common.LoggingMiddleware)  // UUID trace ID + request log
+    app.Get("/swagger/*", swagger.HandlerDefault)
 
     // Wire modules
     fooRepo := foo.NewFooRepository(db)
-    fooSvc := foo.NewFooService(fooRepo)
+    fooSvc  := foo.NewFooService(fooRepo, utils.Log)
     foo.NewFooHandler(app, fooSvc)
 
     // Start PubSub subscribers
-    fooSub := foo.NewFooSubscriber(utils.PubSubClient, fooSvc, utils.Logger)
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
-    go fooSub.Listen(ctx, os.Getenv("FOO_SUBSCRIPTION_ID"))
+    go foo.NewFooSubscriber(utils.PubSubClient, fooSvc, utils.Logger).
+        Listen(ctx, os.Getenv("FOO_SUBSCRIPTION_ID"))
 
     // Graceful shutdown
     go func() {
-        port := os.Getenv("PORT")
+        port := utils.Cfg.Port
         if port == "" { port = "3000" }
         if err := app.Listen(":" + port); err != nil {
             log.Panicf("server error: %v", err)
@@ -321,7 +388,6 @@ func main() {
 
     shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer shutCancel()
-
     app.ShutdownWithContext(shutCtx)
     utils.MongoClient.Disconnect(shutCtx)
 }
@@ -329,52 +395,103 @@ func main() {
 
 ---
 
+## CRUD Generator
+
+Generate a full module from an entity struct file:
+
+```bash
+go run cmd/generate/main.go --domain=Product --file=product.go
+go run cmd/generate/main.go --domain=Product --file=product.go --out=modules/catalog/product
+go run cmd/generate/main.go --domain=Product   # scaffold entity.go to fill in
+```
+
+The generator:
+1. Parses field names and types from the entity struct using `go/ast`.
+2. **Always generates all four files** (`entity.go`, `repository.go`, `service.go`, `handler.go`) from templates.
+3. When `--file` is given, extracts fields then removes the source file.
+4. Uses `[[` `]]` template delimiters so Go composite literals (`bson.D{{...}}`) pass through unmodified.
+5. System fields (`_id`, `created_at`, `updated_at`) are excluded from `Request`/`Response` structs.
+
+Wire in `app.go`:
+```go
+productRepo := product.NewProductRepository(db)
+productSvc  := product.NewProductService(productRepo, utils.Log)
+product.NewProductHandler(app, productSvc)
+```
+
+---
+
 ## MongoDB Rules
 
 - Use `go.mongodb.org/mongo-driver/v2` — **v2**, not v1. Import path is `go.mongodb.org/mongo-driver/v2/...`.
-- `bson.ObjectID`, `bson.NewObjectID()`, `bson.ObjectIDFromHex()` — all from v2.
-- Use MongoDB **views** (`v_collection`) for queries that require `$lookup` (joins). Views are read-only.
+- `bson.ObjectID`, `bson.NewObjectID()`, `bson.ObjectIDFromHex()` — all from v2 bson package.
+- Use MongoDB **views** (`v_collection`) for queries that require `$lookup`. Views are read-only.
 - Pagination: `SetSkip((page-1)*limit)` + `SetLimit(limit)`. Always do a separate `CountDocuments` call for total.
 - Sorting: default `sort_by=updated_at`, `sort_type=desc`. Map `"asc"→1`, `"desc"→-1`.
-- TLS via X.509 certificate: loaded from `MONGO_CREDENTIALS` env path.
 
 ---
 
 ## PubSub Rules
 
-- Initialize client once at startup in `utils/pubsub.go`; store in `utils.PubSubClient`.
-- Project ID from `PUBSUB_PROJECT_ID` env var.
+- Initialize client once at startup in `utils/pubsub.go`; only if `PUBSUB_PROJECT_ID` is set.
 - **Publishers** live in the service layer — call `topic.Publish(ctx, &pubsub.Message{Data: payload})`.
 - **Subscribers** live in `subscriber.go` per module — started as goroutines in `app.go`.
 - Always handle context cancellation in `sub.Receive` — it stops when ctx is cancelled (graceful shutdown).
-- Payload structs use `json` tags; marshal/unmarshal with `encoding/json`.
-- Log message ID (`msg.ID`) in error logs to aid debugging.
+- Log `msg.ID` in error logs to aid debugging.
 
 ---
 
 ## Error Handling
 
-- In handlers: `return fiber.NewError(fiber.StatusXxx, err.Error())` — GlobalErrorHandler catches it.
-- In services/repos: return raw `error` — no wrapping needed unless adding context.
-- Global error response shape (from `utils.GlobalErrorHandler`):
-  ```json
-  { "status": "error", "message": "...", "code": 400 }
-  ```
-- Validation errors return `400` with field-level detail from `XValidator`.
-- `fiber.ErrNotFound` for missing documents, `fiber.ErrUnauthorized` for auth failures.
+Use `apperror.New` for all application errors:
+
+```go
+return apperror.New("user not found").NotFound()           // 404
+return apperror.New("email already exists").Conflict()     // 409
+return apperror.New("").InternalServerError()              // 500
+return apperror.New("invalid or expired token").Unauthorized() // 401
+
+// With field-level detail
+return apperror.ValidationFailed("validation failed", apperror.LookupErrors{
+    apperror.NewRequiredError("email"),
+    apperror.NewDuplicateError("username", "john"),
+})
+```
+
+`GlobalErrorHandler` catches all `*apperror.AppError` values and returns:
+
+```json
+{
+  "success": false,
+  "error": {
+    "type": "APP",
+    "code": "NOT_FOUND",
+    "statusCode": 404,
+    "message": "user not found"
+  }
+}
+```
 
 ---
 
 ## Environment Variables
 
+Reference `.env.example` only — never paste real values into prompts.
+
 ```
 PORT=3000
-MONGO_URI=mongodb+srv://...
-MONGO_CREDENTIALS=/path/to/cert.pem
-DB_NAME=mydb
-SECRET_KEY=jwt-secret
-PUBSUB_PROJECT_ID=gcp-project-id
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
+MONGO_URI=
+MONGO_CREDENTIALS=
+DB_NAME=
+SECRET_KEY=
+PUBSUB_PROJECT_ID=
+GOOGLE_APPLICATION_CREDENTIALS=
+GOOGLE_SERVICE_ACCOUNT=
+REDIS_ENABLE=false
+REDIS_URL=
+STATIC_TOKEN=
+SKIP_PERMISSION=false
+AUTH_API_URL=
 ```
 
 ---
@@ -382,37 +499,37 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
 ## Code Style
 
 - All constructors follow `New{Type}(deps...) Interface` — return interface, not concrete type.
-- No global state except the four singletons: `MongoClient`, `Logger`, `PubSubClient`, `FirebaseApp`.
+- No global state except the five singletons: `MongoClient`, `Logger`, `Log`, `PubSubClient`, `FirebaseAuth`.
 - No logic in `main()` beyond wiring and lifecycle management.
 - `snake_case` for JSON and BSON tags; `PascalCase` for exported Go identifiers.
-- Do not use `log.Println` / `fmt.Println` in business code — use `zap.Logger`.
+- Never use `log.Println` / `fmt.Println` in business code — use `utils.LogInfo/LogError/...`.
+- Services receive `*utils.AppLogger`; PubSub subscribers receive `*zap.Logger` (use `utils.Logger`).
 - All exported functions must be reachable through their module's interface.
 
 ---
 
 ## Swagger
 
-Generate docs with:
 ```bash
+go install github.com/swaggo/swag/cmd/swag@latest
 swag init
 ```
 
-Every handler method needs these annotations before the function:
+Every handler method needs these annotations:
+
 ```go
 // GetAll godoc
-// @Summary ...
-// @Description ...
-// @Tags domain-subdomain
-// @Accept json
-// @Produce json
-// @Param q query string false "Search term"
-// @Param page query int false "Page" default(1)
-// @Param limit query int false "Limit" default(10)
-// @Success 200 {object} common.ListResponse{data=[]FooResponse}
-// @Failure 401 {object} common.StandardError
-// @Failure 500 {object} common.StandardError
-// @Security ApiKeyAuth
-// @Router /foos [get]
+// @Summary      List foos
+// @Tags         foo
+// @Accept       json
+// @Produce      json
+// @Param        page   query int    false "Page"   default(1)
+// @Param        limit  query int    false "Limit"  default(10)
+// @Success      200    {object} common.ListResponse{data=[]FooResponse}
+// @Failure      401    {object} common.StandardError
+// @Failure      500    {object} common.StandardError
+// @Security     ApiKeyAuth
+// @Router       /foos [get]
 ```
 
 Swagger is served at `/swagger/*` via `github.com/gofiber/swagger`.

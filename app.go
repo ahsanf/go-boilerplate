@@ -10,11 +10,11 @@ import (
 	"time"
 
 	_ "go-boilerplate/docs"
+	"go-boilerplate/modules/common"
 	"go-boilerplate/utils"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	fiberlogger "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/swagger"
 	"github.com/joho/godotenv"
 )
@@ -29,7 +29,7 @@ func main() {
 	godotenv.Load()
 	utils.LoadConfig()
 	utils.InitLogger()
-	defer utils.Logger.Sync()
+	defer utils.LogSync()
 
 	utils.ConnectDB()
 	utils.InitRedis()
@@ -57,7 +57,7 @@ func main() {
 		ErrorHandler: utils.GlobalErrorHandler,
 	})
 	app.Use(cors.New())
-	app.Use(fiberlogger.New())
+	app.Use(common.LoggingMiddleware)
 	app.Get("/swagger/*", swagger.HandlerDefault)
 
 	// --- Wire modules here ---

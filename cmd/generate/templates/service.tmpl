@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"[[.ModulePath]]/modules/common"
+	"[[.ModulePath]]/utils"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.uber.org/zap"
 )
 
 type [[.Domain]]Service interface {
@@ -19,10 +19,10 @@ type [[.Domain]]Service interface {
 
 type [[.Domain]]ServiceImpl struct {
 	repo   [[.Domain]]Repository
-	logger *zap.Logger
+	logger *utils.AppLogger
 }
 
-func New[[.Domain]]Service(repo [[.Domain]]Repository, logger *zap.Logger) [[.Domain]]Service {
+func New[[.Domain]]Service(repo [[.Domain]]Repository, logger *utils.AppLogger) [[.Domain]]Service {
 	return &[[.Domain]]ServiceImpl{repo: repo, logger: logger}
 }
 
