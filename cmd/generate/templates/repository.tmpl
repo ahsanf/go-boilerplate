@@ -6,7 +6,6 @@ import (
 
 	"[[.ModulePath]]/modules/common"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/bson/primitive"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -79,7 +78,7 @@ func (r *[[.Domain]]RepositoryImpl) Count(ctx context.Context, filter common.Fil
 }
 
 func (r *[[.Domain]]RepositoryImpl) GetByID(ctx context.Context, id string) ([[.Domain]], error) {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := bson.ObjectIDFromHex(id)
 	if err != nil {
 		return [[.Domain]]{}, errors.New("invalid id")
 	}
@@ -102,7 +101,7 @@ func (r *[[.Domain]]RepositoryImpl) Update(ctx context.Context, data *[[.Domain]
 }
 
 func (r *[[.Domain]]RepositoryImpl) Delete(ctx context.Context, id string) error {
-	oid, err := primitive.ObjectIDFromHex(id)
+	oid, err := bson.ObjectIDFromHex(id)
 	if err != nil {
 		return errors.New("invalid id")
 	}
