@@ -3,7 +3,8 @@ package common
 import (
 	"strings"
 
-	"go-boilerplate/utils"
+	"go-boilerplate/configs"
+	"go-boilerplate/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -21,7 +22,7 @@ const RoleSuperAdmin = "SUPERADMIN"
 // Must be placed after GlobalAuthMiddleware so c.Locals("auth_user") is set.
 func PermissionMiddleware(c *fiber.Ctx) error {
 	// Static-token bypass
-	if st := utils.Cfg.StaticToken; st != "" {
+	if st := configs.Cfg.StaticToken; st != "" {
 		parts := strings.SplitN(c.Get("Authorization"), " ", 2)
 		if len(parts) == 2 && parts[1] == st {
 			return c.Next()
@@ -29,7 +30,7 @@ func PermissionMiddleware(c *fiber.Ctx) error {
 	}
 
 	// Global skip (e.g. local dev)
-	if utils.Cfg.SkipPermission {
+	if configs.Cfg.SkipPermission {
 		return c.Next()
 	}
 

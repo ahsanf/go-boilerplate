@@ -58,6 +58,22 @@ func toKebabCase(s string) string {
 	return strings.ReplaceAll(toSnakeCase(s), "_", "-")
 }
 
+func toCamelCase(s string) string {
+	parts := strings.Split(s, "_")
+	if len(parts) == 1 {
+		return s
+	}
+	var b strings.Builder
+	b.WriteString(parts[0])
+	for _, p := range parts[1:] {
+		if len(p) == 0 {
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]) + p[1:])
+	}
+	return b.String()
+}
+
 func toPackageName(s string) string {
 	return strings.ToLower(s)
 }
@@ -153,7 +169,7 @@ func extractFields(st *ast.StructType) []FieldInfo {
 			Name:     name,
 			Type:     typStr,
 			BsonTag:  bsonTag,
-			JsonTag:  bsonTag, // bson snake_case matches json snake_case
+			JsonTag:  toCamelCase(bsonTag),
 			ValidTag: "required",
 			ReqType:  typStr,
 			RespType: respType,
@@ -205,7 +221,7 @@ func renderTemplate(tmplName string, data TemplateData, outPath string) error {
 // wireInAppGo inserts the module import and wiring lines into app.go.
 // Returns true if app.go was updated, false if skipped (not found / already wired).
 func wireInAppGo(modulePath, pkg, domain, outputDir string) bool {
-	const appPath = "app.go"
+	const appPath = "cmd/server/main.go"
 	raw, err := os.ReadFile(appPath)
 	if err != nil {
 		return false
@@ -279,7 +295,7 @@ func main() {
 
 	outputDir := *outDir
 	if outputDir == "" {
-		outputDir = filepath.Join("modules", domainSnake)
+		outputDir = filepath.Join("internal", "modules", domainSnake)
 	}
 
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {

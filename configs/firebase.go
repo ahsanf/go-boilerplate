@@ -1,6 +1,7 @@
-package utils
+package configs
 
 import (
+	"go-boilerplate/internal/utils"
 	"context"
 
 	firebase "firebase.google.com/go/v4"
@@ -28,13 +29,13 @@ func InitFirebase(ctx context.Context) {
 		app, err = firebase.NewApp(ctx, nil)
 	}
 	if err != nil {
-		Logger.Fatal("failed to init firebase app", zap.Error(err))
+		utils.Logger.Fatal("failed to init firebase app", zap.Error(err))
 	}
 
 	FirebaseAuth, err = app.Auth(ctx)
 	if err != nil {
-		Logger.Fatal("failed to init firebase auth", zap.Error(err))
+		utils.Logger.Fatal("failed to init firebase auth", zap.Error(err))
 	}
 
-	Logger.Info("firebase initialized")
+	utils.Logger.Info("firebase initialized")
 }

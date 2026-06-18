@@ -20,6 +20,6 @@ type [[.Domain]]Request struct {
 type [[.Domain]]Response struct {
 	ID string `json:"id"`
 [[range .Fields]]	[[.Name]] [[.RespType]] `json:"[[.JsonTag]]"`
-[[end]]	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+[[end]]	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }

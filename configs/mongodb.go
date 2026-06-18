@@ -1,6 +1,7 @@
-package utils
+package configs
 
 import (
+	"go-boilerplate/internal/utils"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -43,7 +44,7 @@ func ConnectDB() {
 	}
 
 	MongoClient = client
-	Logger.Info("connected to MongoDB")
+	utils.Logger.Info("connected to MongoDB")
 }
 
 func loadTLSConfig(certPath string) (*tls.Config, error) {

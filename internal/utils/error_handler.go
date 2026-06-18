@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"go-boilerplate/utils/apperror"
+	"go-boilerplate/internal/utils/apperror"
 
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"

@@ -14,8 +14,9 @@ import (
 	"os"
 	"strings"
 
-	"go-boilerplate/utils"
-	"go-boilerplate/utils/apperror"
+	"go-boilerplate/configs"
+	"go-boilerplate/internal/utils"
+	"go-boilerplate/internal/utils/apperror"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gofiber/fiber/v2"
@@ -49,7 +50,7 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 	c.Locals("original_token", token)
 
 	// Static-token bypass
-	if st := utils.Cfg.StaticToken; st != "" && st == token {
+	if st := configs.Cfg.StaticToken; st != "" && st == token {
 		return c.Next()
 	}
 
@@ -130,8 +131,8 @@ func authError(msg string) error {
 // getEmailFromToken tries Firebase first, then falls back to service-account RS256 JWT.
 func getEmailFromToken(ctx context.Context, token, platform string) (string, error) {
 	// Firebase Admin SDK
-	if utils.FirebaseAuth != nil {
-		decoded, err := utils.FirebaseAuth.VerifyIDToken(ctx, token)
+	if configs.FirebaseAuth != nil {
+		decoded, err := configs.FirebaseAuth.VerifyIDToken(ctx, token)
 		if err == nil {
 			if email, ok := decoded.Claims["email"].(string); ok && email != "" {
 				return email, nil
@@ -140,7 +141,7 @@ func getEmailFromToken(ctx context.Context, token, platform string) (string, err
 	}
 
 	// Service-account RS256 fallback
-	if utils.Cfg.ServiceAccount != "" {
+	if configs.Cfg.ServiceAccount != "" {
 		return verifyWithServiceAccount(token, platform)
 	}
 
@@ -158,7 +159,7 @@ type saFileClaims struct {
 }
 
 func verifyWithServiceAccount(token, platform string) (string, error) {
-	data, err := os.ReadFile(utils.Cfg.ServiceAccount)
+	data, err := os.ReadFile(configs.Cfg.ServiceAccount)
 	if err != nil {
 		return "", fmt.Errorf("cannot read service account: %w", err)
 	}
@@ -218,7 +219,7 @@ func emailFromClaims(c *saFileClaims) string {
 }
 
 func verifyRefreshToken(email string) (bool, error) {
-	url := utils.Cfg.AuthAPIURL
+	url := configs.Cfg.AuthAPIURL
 	if url == "" {
 		return false, nil
 	}

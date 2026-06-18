@@ -1,7 +1,8 @@
 package [[.Package]]
 
 import (
-	"[[.ModulePath]]/modules/common"
+	"[[.ModulePath]]/internal/modules/common"
+	"[[.ModulePath]]/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -33,18 +34,21 @@ func New[[.Domain]]Handler(app *fiber.App, service [[.Domain]]Service) {
 // @Param       q         query  string false "Search term"
 // @Param       page      query  int    false "Page"     default(1)
 // @Param       limit     query  int    false "Limit"    default(10)
-// @Param       sort_by   query  string false "Sort by field"
-// @Param       sort_type query  string false "Sort type (asc|desc)" default(desc)
+// @Param       sortBy   query  string false "Sort by field"
+// @Param       sortOrder query  string false "Sort type (asc|desc)" default(desc)
 // @Success     200  {object}  common.ListResponse{data=[][[.Domain]]Response}
 // @Failure     500  {object}  common.StandardError
 // @Router      /[[.DomainKebab]]s [get]
 func (h *[[.Domain]]HandlerImpl) GetAll(c *fiber.Ctx) error {
+	traceId := common.GetTraceID(c)
+	utils.LogInfo("GetAll", "[[.Domain]]Handler", traceId)
+
 	filter := common.Filter{
 		Page:     c.QueryInt("page", 1),
 		Limit:    c.QueryInt("limit", 10),
 		Search:   c.Query("q"),
-		SortBy:   c.Query("sort_by", "updated_at"),
-		SortType: c.Query("sort_type", "desc"),
+		SortBy:   c.Query("sortBy", "updated_at"),
+		SortType: c.Query("sortOrder", "desc"),
 	}
 
 	data, pagination, err := h.service.GetAll(c.Context(), filter)
@@ -66,6 +70,9 @@ func (h *[[.Domain]]HandlerImpl) GetAll(c *fiber.Ctx) error {
 // @Failure     500  {object}  common.StandardError
 // @Router      /[[.DomainKebab]]s/{id} [get]
 func (h *[[.Domain]]HandlerImpl) GetByID(c *fiber.Ctx) error {
+	traceId := common.GetTraceID(c)
+	utils.LogInfo("GetByID", "[[.Domain]]Handler", traceId)
+
 	data, err := h.service.GetByID(c.Context(), c.Params("id"))
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, err.Error())
@@ -85,6 +92,9 @@ func (h *[[.Domain]]HandlerImpl) GetByID(c *fiber.Ctx) error {
 // @Failure     500   {object}  common.StandardError
 // @Router      /[[.DomainKebab]]s [post]
 func (h *[[.Domain]]HandlerImpl) Create(c *fiber.Ctx) error {
+	traceId := common.GetTraceID(c)
+	utils.LogInfo("Create", "[[.Domain]]Handler", traceId)
+
 	var req [[.Domain]]Request
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
@@ -114,6 +124,9 @@ func (h *[[.Domain]]HandlerImpl) Create(c *fiber.Ctx) error {
 // @Failure     500   {object}  common.StandardError
 // @Router      /[[.DomainKebab]]s/{id} [put]
 func (h *[[.Domain]]HandlerImpl) Update(c *fiber.Ctx) error {
+	traceId := common.GetTraceID(c)
+	utils.LogInfo("Update", "[[.Domain]]Handler", traceId)
+
 	var req [[.Domain]]Request
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
@@ -140,6 +153,9 @@ func (h *[[.Domain]]HandlerImpl) Update(c *fiber.Ctx) error {
 // @Failure     500  {object}  common.StandardError
 // @Router      /[[.DomainKebab]]s/{id} [delete]
 func (h *[[.Domain]]HandlerImpl) Delete(c *fiber.Ctx) error {
+	traceId := common.GetTraceID(c)
+	utils.LogInfo("Delete", "[[.Domain]]Handler", traceId)
+
 	if err := h.service.Delete(c.Context(), c.Params("id")); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}

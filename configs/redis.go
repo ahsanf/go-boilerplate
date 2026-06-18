@@ -1,6 +1,7 @@
-package utils
+package configs
 
 import (
+	"go-boilerplate/internal/utils"
 	"context"
 	"encoding/json"
 	"time"
@@ -13,7 +14,7 @@ var RedisClient *redis.Client
 
 func InitRedis() {
 	if !Cfg.RedisEnabled {
-		Logger.Info("redis disabled")
+		utils.Logger.Info("redis disabled")
 		return
 	}
 
@@ -21,16 +22,16 @@ func InitRedis() {
 	if Cfg.RedisURL != "" {
 		parsed, err := redis.ParseURL(Cfg.RedisURL)
 		if err != nil {
-			Logger.Fatal("invalid REDIS_URL", zap.Error(err))
+			utils.Logger.Fatal("invalid REDIS_URL", zap.Error(err))
 		}
 		opts = parsed
 	}
 
 	RedisClient = redis.NewClient(opts)
 	if err := RedisClient.Ping(context.Background()).Err(); err != nil {
-		Logger.Fatal("failed to connect to redis", zap.Error(err))
+		utils.Logger.Fatal("failed to connect to redis", zap.Error(err))
 	}
-	Logger.Info("connected to redis")
+	utils.Logger.Info("connected to redis")
 }
 
 func CacheSet(ctx context.Context, key string, value any, ttl time.Duration) error {

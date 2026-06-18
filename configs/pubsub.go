@@ -1,6 +1,7 @@
-package utils
+package configs
 
 import (
+	"go-boilerplate/internal/utils"
 	"context"
 	"log"
 	"os"
@@ -22,5 +23,5 @@ func InitPubSub(ctx context.Context) {
 	}
 
 	PubSubClient = client
-	Logger.Info("connected to PubSub")
+	utils.Logger.Info("connected to PubSub")
 }

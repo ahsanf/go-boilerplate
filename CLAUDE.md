@@ -29,41 +29,51 @@
 
 ## Project Layout
 
+Follows the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
+
 ```
-app.go                          ← Fiber bootstrap, DI wiring, graceful shutdown
-utils/
+cmd/
+  server/
+    main.go                     ← Fiber bootstrap, DI wiring, graceful shutdown
+  generate/
+    main.go                     ← CRUD generator CLI (--domain, --file, --out)
+    templates/                  ← entity / repository / service / handler .tmpl files
+configs/
   config.go                     ← AppConfig struct, LoadConfig(), global Cfg
-  logger.go                     ← InitLogger(), AppLogger, LogInfo/Warn/Error/Fatal/Sync helpers
   mongodb.go                    ← ConnectDB(), global MongoClient
   redis.go                      ← InitRedis(), CacheSet/Get/Del helpers
   firebase.go                   ← InitFirebase(), global FirebaseAuth
   pubsub.go                     ← InitPubSub(), global PubSubClient
-  casbin.go                     ← SetPolicyLoader(), CheckPermissions()
-  token.go                      ← SignToken(), ValidateToken() — HS256 JWT
-  error_handler.go              ← GlobalErrorHandler (Fiber error handler)
-  apperror/
-    error.go                    ← AppError type
-    http_error.go               ← apperror.New("msg").Unauthorized() builder
-    lookup_error.go             ← LookupError field-level validation helpers
-modules/
-  common/
-    entity.go                   ← Filter, Response, ListResponse, Pagination, AuthUser
-    validator.go                ← XValidator (wraps go-playground/validator)
-    middleware.go               ← GlobalAuthMiddleware, AuthTokenMiddleware, HybridTokenMiddleware
-    permission.go               ← PermissionMiddleware (Casbin RBAC)
-    logging.go                  ← LoggingMiddleware, GetTraceID()
-    pagination.go               ← CalculatePagination()
-  {domain}/
-    entity.go                   ← Mongo struct, Request/Response types
-    repository.go               ← Interface + impl, raw Mongo queries
-    service.go                  ← Interface + impl, business logic
-    handler.go                  ← Fiber routes, Swagger annotations
-    subscriber.go               ← (optional) PubSub subscription handler
-cmd/
-  generate/
-    main.go                     ← CRUD generator CLI (--domain, --file, --out)
-    templates/                  ← entity / repository / service / handler .tmpl files
+internal/
+  utils/
+    logger.go                   ← InitLogger(), AppLogger, LogInfo/Warn/Error/Fatal/Sync helpers
+    casbin.go                   ← SetPolicyLoader(), CheckPermissions()
+    token.go                    ← SignToken(), ValidateToken() — HS256 JWT
+    error_handler.go            ← GlobalErrorHandler (Fiber error handler)
+    apperror/
+      error.go                  ← AppError type
+      http_error.go             ← apperror.New("msg").Unauthorized() builder
+      lookup_error.go           ← LookupError field-level validation helpers
+  modules/
+    common/
+      entity.go                 ← Filter, Response, ListResponse, Pagination, AuthUser
+      validator.go              ← XValidator (wraps go-playground/validator)
+      middleware.go             ← GlobalAuthMiddleware, AuthTokenMiddleware, HybridTokenMiddleware
+      permission.go             ← PermissionMiddleware (Casbin RBAC)
+      logging.go                ← LoggingMiddleware, GetTraceID()
+      pagination.go             ← CalculatePagination()
+    {domain}/
+      entity.go                 ← Mongo struct, Request/Response types
+      repository.go             ← Interface + impl, raw Mongo queries
+      service.go                ← Interface + impl, business logic
+      handler.go                ← Fiber routes, Swagger annotations
+      subscriber.go             ← (optional) PubSub subscription handler
+configs/
+  .env.example                  ← environment variable reference (no real values)
+deployments/
+  Dockerfile                    ← multi-stage Docker build
 docs/                           ← Swagger output (generated — do not edit)
+scripts/                        ← build, migration, tooling scripts
 ```
 
 Every domain module is **self-contained**: entity → repository → service → handler. No circular imports across modules (pass interfaces, not concrete types).
@@ -279,8 +289,8 @@ type Filter struct {
     Page     int    `json:"page"`
     Limit    int    `json:"limit"`
     Search   string `json:"search"`
-    SortBy   string `json:"sort_by"`
-    SortType string `json:"sort_type"`  // "asc" | "desc"
+    SortBy   string `json:"sortBy"`
+    SortType string `json:"sortOrder"`  // "asc" | "desc"
 }
 
 type AuthUser struct {
@@ -329,9 +339,10 @@ type Pagination struct {
 
 ---
 
-## app.go — Bootstrap Pattern
+## cmd/server/main.go — Bootstrap Pattern
 
 ```go
+// cmd/server/main.go
 func main() {
     godotenv.Load()
     utils.LoadConfig()
@@ -412,7 +423,7 @@ The generator:
 4. Uses `[[` `]]` template delimiters so Go composite literals (`bson.D{{...}}`) pass through unmodified.
 5. System fields (`_id`, `created_at`, `updated_at`) are excluded from `Request`/`Response` structs.
 
-Wire in `app.go`:
+Wire in `cmd/server/main.go`:
 ```go
 productRepo := product.NewProductRepository(db)
 productSvc  := product.NewProductService(productRepo, utils.Log)
@@ -427,7 +438,7 @@ product.NewProductHandler(app, productSvc)
 - `bson.ObjectID`, `bson.NewObjectID()`, `bson.ObjectIDFromHex()` — all from v2 bson package.
 - Use MongoDB **views** (`v_collection`) for queries that require `$lookup`. Views are read-only.
 - Pagination: `SetSkip((page-1)*limit)` + `SetLimit(limit)`. Always do a separate `CountDocuments` call for total.
-- Sorting: default `sort_by=updated_at`, `sort_type=desc`. Map `"asc"→1`, `"desc"→-1`.
+- Sorting: default `sortBy=updated_at`, `sortOrder=desc`. Map `"asc"→1`, `"desc"→-1`.
 
 ---
 

@@ -4,8 +4,8 @@ type Filter struct {
 	Page     int    `json:"page"`
 	Limit    int    `json:"limit"`
 	Search   string `json:"search"`
-	SortBy   string `json:"sort_by"`
-	SortType string `json:"sort_type"` // "asc" | "desc"
+	SortBy   string `json:"sortBy"`
+	SortType string `json:"sortType"` // "asc" | "desc"
 }
 
 type Response struct {
@@ -22,8 +22,8 @@ type ListResponse struct {
 type Pagination struct {
 	Page       int   `json:"page"`
 	Limit      int   `json:"limit"`
-	TotalItems int64 `json:"total_items"`
-	TotalPages int64 `json:"total_pages"`
+	TotalItems int64 `json:"totalItems"`
+	TotalPages int64 `json:"totalPages"`
 }
 
 type StandardError struct {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"go-boilerplate/utils"
+	"go-boilerplate/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -24,7 +24,8 @@ func LoggingMiddleware(c *fiber.Ctx) error {
 
 	utils.LogInfo(
 		"LoggingMiddleware", "LoggingMiddleware", traceId,
-		fmt.Sprintf(`URL: "%s" Queries: %v Params: %v Body: %v`,
+		fmt.Sprintf(`[%s] URL: "%s" Queries: %v Params: %v Body: %v`,
+			c.Method(),
 			c.OriginalURL(),
 			c.Queries(),
 			c.AllParams(),
