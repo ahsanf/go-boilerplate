@@ -285,8 +285,8 @@ type Filter struct {
 
 type AuthUser struct {
     Email      string
-    ObaRole    []string
-    StaffObaId string
+    Role       []string
+    StaffId    string
     WorkunitId string
     Platform   string
     Token      string

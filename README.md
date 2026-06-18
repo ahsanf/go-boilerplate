@@ -179,7 +179,7 @@ Mirrors the Firebase + service-account JWT hybrid flow:
 
 1. Requires `Authorization: Bearer <token>`.
 2. `STATIC_TOKEN` bypasses all checks.
-3. Parses optional 4th JWT segment carrying `platform`, `currentRole`, `staffObaId`, `workunitId`.
+3. Parses optional 4th JWT segment carrying `platform`, `currentRole`, `staffId`, `workunitId`.
 4. Verifies via Firebase Admin SDK; falls back to RS256 service-account JWT.
 5. Sets `c.Locals("auth_user", common.AuthUser{...})`.
 

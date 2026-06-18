@@ -54,7 +54,7 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 	}
 
 	// Parse optional 4th segment (base64-JSON) carrying platform metadata
-	var platform, currentRole, staffObaId, workunitId string
+	var platform, currentRole, staffId, workunitId string
 	segments := strings.Split(token, ".")
 	if len(segments) > 3 {
 		raw, err := base64.RawStdEncoding.DecodeString(segments[3])
@@ -62,13 +62,13 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 			var meta struct {
 				Platform    string `json:"platform"`
 				CurrentRole string `json:"currentRole"`
-				StaffObaId  string `json:"staffObaId"`
+				StaffId  string `json:"staffId"`
 				WorkunitId  string `json:"workunitId"`
 			}
 			if json.Unmarshal(raw, &meta) == nil {
 				platform = meta.Platform
 				currentRole = meta.CurrentRole
-				staffObaId = meta.StaffObaId
+				staffId = meta.StaffId
 				workunitId = meta.WorkunitId
 			}
 		}
@@ -84,8 +84,8 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 
 	c.Locals("auth_user", AuthUser{
 		Email:      email,
-		ObaRole:    splitRole(currentRole),
-		StaffObaId: staffObaId,
+		Role:    splitRole(currentRole),
+		StaffId: staffId,
 		WorkunitId: workunitId,
 		Platform:   platform,
 		Token:      token,
