@@ -1,32 +1,31 @@
 package configs
 
 import (
-	"go-boilerplate/internal/utils"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"log"
 	"os"
 	"time"
 
+	"go-boilerplate/internal/utils"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.uber.org/zap"
 )
 
 var MongoClient *mongo.Client
 
 func ConnectDB() {
-	uri := os.Getenv("MONGO_URI")
-	if uri == "" {
-		log.Fatal("MONGO_URI is not set")
+	if Cfg.MongoURI == "" {
+		utils.Logger.Fatal("MONGO_URI is not set")
 	}
 
-	clientOpts := options.Client().ApplyURI(uri)
+	clientOpts := options.Client().ApplyURI(Cfg.MongoURI)
 
-	if certPath := os.Getenv("MONGO_CREDENTIALS"); certPath != "" {
-		tlsCfg, err := loadTLSConfig(certPath)
+	if Cfg.MongoCredentials != "" {
+		tlsCfg, err := loadTLSConfig(Cfg.MongoCredentials)
 		if err != nil {
-			log.Fatalf("failed to load TLS config: %v", err)
+			utils.Logger.Fatal("failed to load TLS config", zap.Error(err))
 		}
 		clientOpts.SetTLSConfig(tlsCfg)
 	}
@@ -36,11 +35,11 @@ func ConnectDB() {
 
 	client, err := mongo.Connect(clientOpts)
 	if err != nil {
-		log.Fatalf("failed to connect to MongoDB: %v", err)
+		utils.Logger.Fatal("failed to connect to MongoDB", zap.Error(err))
 	}
 
 	if err := client.Ping(ctx, nil); err != nil {
-		log.Fatalf("failed to ping MongoDB: %v", err)
+		utils.Logger.Fatal("failed to ping MongoDB", zap.Error(err))
 	}
 
 	MongoClient = client

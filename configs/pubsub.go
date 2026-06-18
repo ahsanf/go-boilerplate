@@ -1,25 +1,23 @@
 package configs
 
 import (
-	"go-boilerplate/internal/utils"
 	"context"
-	"log"
-	"os"
 
-	"cloud.google.com/go/pubsub"
+	"go-boilerplate/internal/utils"
+	"cloud.google.com/go/pubsub/v2"
+	"go.uber.org/zap"
 )
 
 var PubSubClient *pubsub.Client
 
 func InitPubSub(ctx context.Context) {
-	projectID := os.Getenv("PUBSUB_PROJECT_ID")
-	if projectID == "" {
-		log.Fatal("PUBSUB_PROJECT_ID is not set")
+	if Cfg.PubSubProjectID == "" {
+		utils.Logger.Fatal("PUBSUB_PROJECT_ID is not set")
 	}
 
-	client, err := pubsub.NewClient(ctx, projectID)
+	client, err := pubsub.NewClient(ctx, Cfg.PubSubProjectID)
 	if err != nil {
-		log.Fatalf("failed to create PubSub client: %v", err)
+		utils.Logger.Fatal("failed to create PubSub client", zap.Error(err))
 	}
 
 	PubSubClient = client
