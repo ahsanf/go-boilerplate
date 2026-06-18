@@ -202,6 +202,63 @@ func renderTemplate(tmplName string, data TemplateData, outPath string) error {
 	return tmpl.Execute(f, data)
 }
 
+// wireInAppGo inserts the module import and wiring lines into app.go.
+// Returns true if app.go was updated, false if skipped (not found / already wired).
+func wireInAppGo(modulePath, pkg, domain, outputDir string) bool {
+	const appPath = "app.go"
+	raw, err := os.ReadFile(appPath)
+	if err != nil {
+		return false
+	}
+
+	importPath := fmt.Sprintf(`"%s/%s"`, modulePath, filepath.ToSlash(outputDir))
+	src := string(raw)
+	changed := false
+
+	// 1. Add import after the last "go-boilerplate/ line in the import block.
+	if !strings.Contains(src, importPath) {
+		lines := strings.Split(src, "\n")
+		lastIdx := -1
+		for i, l := range lines {
+			if strings.HasPrefix(strings.TrimSpace(l), `"go-boilerplate/`) {
+				lastIdx = i
+			}
+		}
+		if lastIdx >= 0 {
+			out := make([]string, 0, len(lines)+1)
+			out = append(out, lines[:lastIdx+1]...)
+			out = append(out, "\t"+importPath)
+			out = append(out, lines[lastIdx+1:]...)
+			src = strings.Join(out, "\n")
+			changed = true
+		}
+	}
+
+	// 2. Insert wiring after the sentinel comment (skip if already wired).
+	const sentinel = "// --- Wire modules here ---"
+	wireBlock := fmt.Sprintf(
+		"\n\t%sRepo := %s.New%sRepository(db)\n\t%sSvc  := %s.New%sService(%sRepo, utils.Log)\n\t%s.New%sHandler(app, %sSvc)",
+		pkg, pkg, domain,
+		pkg, pkg, domain, pkg,
+		pkg, domain, pkg,
+	)
+	if strings.Contains(src, sentinel) && !strings.Contains(src, pkg+"Repo :=") {
+		src = strings.Replace(src, sentinel, sentinel+wireBlock, 1)
+		changed = true
+	}
+
+	if !changed {
+		return false
+	}
+
+	if err := os.WriteFile(appPath, []byte(src), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not update app.go: %v\n", err)
+		return false
+	}
+	fmt.Println("wired    app.go")
+	return true
+}
+
 // --- main ---
 
 func main() {
@@ -281,15 +338,21 @@ func main() {
 		}
 	}
 
+	wired := wireInAppGo(data.ModulePath, pkg, *domain, outputDir)
+
 	fmt.Println()
 	fmt.Printf("✔  Module %q generated in %s\n", *domain, outputDir)
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Printf("  1. Wire in app.go:\n")
-	fmt.Printf("       %sRepo := %s.New%sRepository(db)\n", pkg, pkg, *domain)
-	fmt.Printf("       %sSvc  := %s.New%sService(%sRepo, utils.Logger)\n", pkg, pkg, *domain, pkg)
-	fmt.Printf("       %s.New%sHandler(app, %sSvc)\n", pkg, *domain, pkg)
-	fmt.Printf("  2. Add the import:  \"%s/%s\"\n", data.ModulePath, strings.ReplaceAll(outputDir, "\\", "/"))
-	fmt.Println("  3. Run: go mod tidy && swag init")
+	if !wired {
+		fmt.Printf("  1. Wire in app.go:\n")
+		fmt.Printf("       %sRepo := %s.New%sRepository(db)\n", pkg, pkg, *domain)
+		fmt.Printf("       %sSvc  := %s.New%sService(%sRepo, utils.Log)\n", pkg, pkg, *domain, pkg)
+		fmt.Printf("       %s.New%sHandler(app, %sSvc)\n", pkg, *domain, pkg)
+		fmt.Printf("  2. Add the import:  \"%s/%s\"\n", data.ModulePath, strings.ReplaceAll(outputDir, "\\", "/"))
+		fmt.Println("  3. Run: go mod tidy && swag init")
+	} else {
+		fmt.Println("  1. Run: go mod tidy && swag init")
+	}
 }
 

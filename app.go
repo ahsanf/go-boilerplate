@@ -12,7 +12,6 @@ import (
 	_ "go-boilerplate/docs"
 	"go-boilerplate/modules/common"
 	"go-boilerplate/utils"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/swagger"
