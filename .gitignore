@@ -1,5 +1,5 @@
 # Binaries
-server
+/server
 *.exe
 *.exe~
 *.dll
@@ -41,4 +41,3 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
