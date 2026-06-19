@@ -18,7 +18,7 @@ import (
 	"go-boilerplate/internal/utils"
 	"go-boilerplate/internal/utils/apperror"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gofiber/fiber/v2"
 )
 
