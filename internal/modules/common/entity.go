@@ -34,9 +34,9 @@ type StandardError struct {
 // AuthUser is stored in c.Locals("auth_user") after GlobalAuthMiddleware.
 type AuthUser struct {
 	Email      string
-	Role    []string
-	StaffId string
+	Role       []string
+	UserId     string
+	PlatformId string
 	WorkunitId string
-	Platform   string
 	Token      string // the verified JWT (without the custom 4th segment)
 }

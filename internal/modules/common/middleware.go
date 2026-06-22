@@ -22,10 +22,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-const (
-	PlatformMobile = "mobile"
-	PlatformOBA    = "web-oba"
-)
 
 // GlobalAuthMiddleware validates an Authorization: Bearer token.
 //
@@ -55,43 +51,40 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 	}
 
 	// Parse optional 4th segment (base64-JSON) carrying platform metadata
-	var platform, currentRole, staffId, workunitId string
+	var currentRole, userId, platformId, workunitId string
 	segments := strings.Split(token, ".")
 	if len(segments) > 3 {
 		raw, err := base64.RawStdEncoding.DecodeString(segments[3])
 		if err == nil {
 			var meta struct {
-				Platform    string `json:"platform"`
 				CurrentRole string `json:"currentRole"`
-				StaffId  string `json:"staffId"`
+				UserId      string `json:"userId"`
+				PlatformId  string `json:"platformId"`
 				WorkunitId  string `json:"workunitId"`
 			}
 			if json.Unmarshal(raw, &meta) == nil {
-				platform = meta.Platform
 				currentRole = meta.CurrentRole
-				staffId = meta.StaffId
+				userId = meta.UserId
+				platformId = meta.PlatformId
 				workunitId = meta.WorkunitId
 			}
 		}
-		if platform == PlatformMobile || platform == PlatformOBA {
-			token = segments[0] + "." + segments[1] + "." + segments[2]
-		}
+		token = segments[0] + "." + segments[1] + "." + segments[2]
 	}
 
-	email, err := getEmailFromToken(c.Context(), token, platform)
+	email, err := getEmailFromToken(c.Context(), token)
 	if err != nil {
 		return authError(err.Error())
 	}
 
-	c.Locals("auth_user", AuthUser{
+	c.Locals("authUser", AuthUser{
 		Email:      email,
-		Role:    splitRole(currentRole),
-		StaffId: staffId,
+		Role:       splitRole(currentRole),
+		UserId:     userId,
+		PlatformId: platformId,
 		WorkunitId: workunitId,
-		Platform:   platform,
 		Token:      token,
 	})
-	c.Locals("email", email)
 
 	return c.Next()
 }
@@ -129,7 +122,7 @@ func authError(msg string) error {
 }
 
 // getEmailFromToken tries Firebase first, then falls back to service-account RS256 JWT.
-func getEmailFromToken(ctx context.Context, token, platform string) (string, error) {
+func getEmailFromToken(ctx context.Context, token string) (string, error) {
 	// Firebase Admin SDK
 	if configs.FirebaseAuth != nil {
 		decoded, err := configs.FirebaseAuth.VerifyIDToken(ctx, token)
@@ -142,7 +135,7 @@ func getEmailFromToken(ctx context.Context, token, platform string) (string, err
 
 	// Service-account RS256 fallback
 	if configs.Cfg.ServiceAccount != "" {
-		return verifyWithServiceAccount(token, platform)
+		return verifyWithServiceAccount(token)
 	}
 
 	return "", errors.New("invalid access token")
@@ -158,7 +151,7 @@ type saFileClaims struct {
 	jwt.RegisteredClaims
 }
 
-func verifyWithServiceAccount(token, platform string) (string, error) {
+func verifyWithServiceAccount(token string) (string, error) {
 	data, err := os.ReadFile(configs.Cfg.ServiceAccount)
 	if err != nil {
 		return "", fmt.Errorf("cannot read service account: %w", err)
@@ -193,7 +186,7 @@ func verifyWithServiceAccount(token, platform string) (string, error) {
 	})
 
 	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) && platform != PlatformMobile {
+		if errors.Is(err, jwt.ErrTokenExpired) {
 			email := emailFromClaims(&claims)
 			if ok, _ := verifyRefreshToken(email); ok {
 				return email, nil
