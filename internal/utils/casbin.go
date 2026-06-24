@@ -36,8 +36,8 @@ func SetPolicyLoader(loader func(ctx context.Context) (string, error)) {
 	PolicyLoader = loader
 }
 
-// CheckPermissions returns true if any role in roles is granted access to path+method.
-func CheckPermissions(ctx context.Context, roles []string, path, method string) (bool, error) {
+// CheckPermission returns true if any role in roles is granted access to path+method.
+func CheckPermission(ctx context.Context, role string, path, method string) (bool, error) {
 	if PolicyLoader == nil {
 		Logger.Warn("casbin PolicyLoader not set — allowing all requests")
 		return true, nil
@@ -55,17 +55,15 @@ func CheckPermissions(ctx context.Context, roles []string, path, method string) 
 	if err != nil {
 		return false, err
 	}
-
-	for _, role := range roles {
-		ok, err := e.Enforce(role, path, method)
-		if err != nil {
-			Logger.Error("casbin enforce error", zap.String("role", role), zap.Error(err))
-			continue
-		}
-		if ok {
-			return true, nil
-		}
+	ok, err := e.Enforce(role, path, method)
+	if err != nil {
+		Logger.Error("casbin enforce error", zap.String("role", role), zap.Error(err))
+		return false, nil
 	}
+	if ok {
+		return true, nil
+	}
+
 	return false, nil
 }
 

@@ -18,10 +18,9 @@ import (
 	"go-boilerplate/internal/utils"
 	"go-boilerplate/internal/utils/apperror"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
 )
-
 
 // GlobalAuthMiddleware validates an Authorization: Bearer token.
 //
@@ -51,7 +50,7 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 	}
 
 	// Parse optional 4th segment (base64-JSON) carrying platform metadata
-	var currentRole, userId, platformId, workunitId string
+	var currentRole, userId, ModuleId, workunitId string
 	segments := strings.Split(token, ".")
 	if len(segments) > 3 {
 		raw, err := base64.RawStdEncoding.DecodeString(segments[3])
@@ -59,13 +58,13 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 			var meta struct {
 				CurrentRole string `json:"currentRole"`
 				UserId      string `json:"userId"`
-				PlatformId  string `json:"platformId"`
+				ModuleId  string `json:"ModuleId"`
 				WorkunitId  string `json:"workunitId"`
 			}
 			if json.Unmarshal(raw, &meta) == nil {
 				currentRole = meta.CurrentRole
 				userId = meta.UserId
-				platformId = meta.PlatformId
+				ModuleId = meta.ModuleId
 				workunitId = meta.WorkunitId
 			}
 		}
@@ -79,9 +78,9 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 
 	c.Locals("authUser", AuthUser{
 		Email:      email,
-		Role:       splitRole(currentRole),
+		Role:       currentRole,
 		UserId:     userId,
-		PlatformId: platformId,
+		ModuleId: ModuleId,
 		WorkunitId: workunitId,
 		Token:      token,
 	})

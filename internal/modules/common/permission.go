@@ -40,16 +40,14 @@ func PermissionMiddleware(c *fiber.Ctx) error {
 	}
 
 	// Superadmin bypass
-	for _, r := range user.Role {
-		if r == RoleSuperAdmin {
-			return c.Next()
-		}
+	if user.Role == RoleSuperAdmin {
+		return c.Next()
 	}
 
 	method := string(c.Method())
 	path := c.Path()
 
-	allowed, err := utils.CheckPermissions(c.Context(), user.Role, path, method)
+	allowed, err := utils.CheckPermission(c.Context(), user.Role, path, method)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(authErrorResponse("Unauthorized"))
 	}
