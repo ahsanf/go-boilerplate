@@ -9,7 +9,6 @@ type AppConfig struct {
 	Port             string
 	MongoURI         string
 	MongoCredentials string
-	DBName           string
 	SecretKey        string
 	PubSubProjectID  string
 	StaticToken      string
@@ -28,7 +27,6 @@ func LoadConfig() {
 		Port:             envOrDefault("PORT", "3000"),
 		MongoURI:         os.Getenv("MONGO_URI"),
 		MongoCredentials: os.Getenv("MONGO_CREDENTIALS"),
-		DBName:           os.Getenv("DB_NAME"),
 		SecretKey:        os.Getenv("SECRET_KEY"),
 		PubSubProjectID:  os.Getenv("PUBSUB_PROJECT_ID"),
 		StaticToken:      os.Getenv("STATIC_TOKEN"),
