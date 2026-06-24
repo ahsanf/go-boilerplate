@@ -76,7 +76,7 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 		return authError(err.Error())
 	}
 
-	c.Locals("authUser", AuthUser{
+	c.Locals("auth_user", AuthUser{
 		Email:      email,
 		Role:       currentRole,
 		UserId:     userId,
