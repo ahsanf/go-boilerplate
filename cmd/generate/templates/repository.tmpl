@@ -10,7 +10,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-const collectionName = "[[.DomainPlural]]"
+const (
+	collectionName = "[[.DomainPlural]]"
+	dbName         common.DBName = common.UNU_ACADEMIC_DB // TODO: change to the target DB
+)
 
 type [[.Domain]]Repository interface {
 	GetAll(ctx context.Context, filter common.Filter) ([][[.Domain]], error)
@@ -22,15 +25,15 @@ type [[.Domain]]Repository interface {
 }
 
 type [[.Domain]]RepositoryImpl struct {
-	db *mongo.Database
+	client *mongo.Client
 }
 
-func New[[.Domain]]Repository(db *mongo.Database) [[.Domain]]Repository {
-	return &[[.Domain]]RepositoryImpl{db: db}
+func New[[.Domain]]Repository(client *mongo.Client) [[.Domain]]Repository {
+	return &[[.Domain]]RepositoryImpl{client: client}
 }
 
 func (r *[[.Domain]]RepositoryImpl) col() *mongo.Collection {
-	return r.db.Collection(collectionName)
+	return r.client.Database(string(dbName)).Collection(collectionName)
 }
 
 func (r *[[.Domain]]RepositoryImpl) GetAll(ctx context.Context, filter common.Filter) ([][[.Domain]], error) {

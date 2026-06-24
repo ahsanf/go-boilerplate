@@ -47,3 +47,26 @@ type JwtPayload struct {
 	ModuleId   string
 	WorkunitId string
 }
+
+type DBName string
+type CollectionName string
+type HttpMethod string
+
+
+const (
+	YOUR_DB_NAME DBName = "your_db_name"
+)
+
+const (
+	YOUR_COLLECTION_NAME CollectionName = "your_collection_name"
+)
+
+const (
+	METHOD_GET    HttpMethod = "GET"
+	METHOD_POST   HttpMethod = "POST"
+	METHOD_PUT    HttpMethod = "PUT"
+	METHOD_DELETE HttpMethod = "DELETE"
+	METHOD_PATCH  HttpMethod = "PATCH"
+)
+
+

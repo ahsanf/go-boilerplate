@@ -253,7 +253,7 @@ func wireInAppGo(modulePath, pkg, domain, outputDir string) bool {
 	// 2. Insert wiring after the sentinel comment (skip if already wired).
 	const sentinel = "// --- Wire modules here ---"
 	wireBlock := fmt.Sprintf(
-		"\n\t%sRepo := %s.New%sRepository(db)\n\t%sSvc  := %s.New%sService(%sRepo, utils.Log)\n\t%s.New%sHandler(app, %sSvc)",
+		"\n\t%sRepo := %s.New%sRepository(configs.MongoClient)\n\t%sSvc  := %s.New%sService(%sRepo, utils.Log)\n\t%s.New%sHandler(app, %sSvc)",
 		pkg, pkg, domain,
 		pkg, pkg, domain, pkg,
 		pkg, domain, pkg,
@@ -362,7 +362,7 @@ func main() {
 	fmt.Println("Next steps:")
 	if !wired {
 		fmt.Printf("  1. Wire in app.go:\n")
-		fmt.Printf("       %sRepo := %s.New%sRepository(db)\n", pkg, pkg, *domain)
+		fmt.Printf("       %sRepo := %s.New%sRepository(configs.MongoClient)\n", pkg, pkg, *domain)
 		fmt.Printf("       %sSvc  := %s.New%sService(%sRepo, utils.Log)\n", pkg, pkg, *domain, pkg)
 		fmt.Printf("       %s.New%sHandler(app, %sSvc)\n", pkg, *domain, pkg)
 		fmt.Printf("  2. Add the import:  \"%s/%s\"\n", data.ModulePath, strings.ReplaceAll(outputDir, "\\", "/"))

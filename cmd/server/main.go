@@ -46,9 +46,6 @@ func main() {
 		configs.InitFirebase(ctx)
 	}
 
-	db := configs.MongoClient.Database(configs.Cfg.DBName)
-	_ = db // remove once modules are wired
-
 	// utils.SetPolicyLoader(func(ctx context.Context) (string, error) {
 	//   // load CSV from MongoDB (via your Role adapter) or Redis cache
 	//   return myRoleAdapter.ToCasbinCSV(ctx)
@@ -119,8 +116,8 @@ func main() {
 	// --- Wire modules here ---
 
 	// Example:
-	//   fooRepo := foo.NewFooRepository(db)
-	//   fooSvc  := foo.NewFooService(fooRepo, utils.Logger)
+	//   fooRepo := foo.NewFooRepository(configs.MongoClient)
+	//   fooSvc  := foo.NewFooService(fooRepo, utils.Log)
 	//   foo.NewFooHandler(app, fooSvc)
 
 	// --- Protected route example ---
