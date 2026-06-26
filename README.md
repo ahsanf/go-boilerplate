@@ -27,6 +27,8 @@ cmd/
     main.go                     ← CRUD generator CLI (--domain, --file, --out)
     main_test.go                ← Unit tests for generator helpers and field parser
     templates/                  ← entity / repository / service / handler .tmpl files
+  catalogue/
+    main.go                     ← Catalogue generator CLI (--type, --modules, --out, --dry-run)
 configs/
   config.go                     ← AppConfig struct, LoadConfig(), global Cfg
   mongodb.go                    ← ConnectDB(), global MongoClient
@@ -285,6 +287,35 @@ return apperror.ValidationFailed("validation failed", apperror.LookupErrors{
 }
 ```
 
+## Catalogue Generator
+
+Scans `internal/modules/` and upserts per-domain sections into `docs/data-catalogue.md` and `docs/service-catalogue.md`. Run it whenever you add, rename, or remove a module — it is fully idempotent.
+
+```bash
+# Update both catalogues
+go run cmd/catalogue/main.go
+
+# One at a time
+go run cmd/catalogue/main.go --type data
+go run cmd/catalogue/main.go --type service
+
+# Preview without writing files
+go run cmd/catalogue/main.go --dry-run
+
+# Custom paths
+go run cmd/catalogue/main.go --modules internal/modules --out docs
+```
+
+For each domain module the generator reads:
+
+| Source file | What is extracted |
+|---|---|
+| `entity.go` | Struct fields, Go types, bson tags (via `go/ast`) |
+| `repository.go` | MongoDB collection name constant |
+| `handler.go` | HTTP routes and summaries from Swagger `@Router` annotations |
+
+Each domain section is wrapped in `<!-- gen:begin:Name -->` / `<!-- gen:end:Name -->` markers. Everything outside those markers (overview, data flow, compliance, on-call notes, etc.) is left untouched across runs.
+
 ## Module Conventions
 
 - `entity.go` — Mongo document struct (bson tags), Request struct (`validate` + camelCase json tags), Response struct (string ID, RFC3339 timestamps).
@@ -293,3 +324,9 @@ return apperror.ValidationFailed("validation failed", apperror.LookupErrors{
 - `handler.go` — `New{Domain}Handler(app, service)` registers routes; each method logs with `utils.LogInfo`; every handler has full Swagger annotations.
 - Constructors always return the **interface**, not the concrete type.
 - No logic in `main()` beyond wiring and lifecycle management.
+
+## Contributors
+
+| Name | Contact |
+|---|---|
+| Ahsan Firdaus | social.ahsanf@gmail.com |
