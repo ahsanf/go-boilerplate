@@ -6,14 +6,14 @@ import (
 
 	"go-boilerplate/internal/utils"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )
 
 // LoggingMiddleware assigns a UUID trace ID to every request, stores it in
 // c.Locals("trace_id"), and logs the URL, query params, route params, and body.
 // Mirrors logging.ts — drop this in place of (or alongside) Fiber's built-in logger.
-func LoggingMiddleware(c *fiber.Ctx) error {
+func LoggingMiddleware(c fiber.Ctx) error {
 	traceId := uuid.New().String()
 	c.Locals("trace_id", traceId)
 
@@ -28,7 +28,7 @@ func LoggingMiddleware(c *fiber.Ctx) error {
 			c.Method(),
 			c.OriginalURL(),
 			c.Queries(),
-			c.AllParams(),
+			c.Bind().URI,
 			body,
 		),
 	)
@@ -38,7 +38,7 @@ func LoggingMiddleware(c *fiber.Ctx) error {
 
 // GetTraceID retrieves the request-scoped trace ID set by LoggingMiddleware.
 // Returns an empty string if the middleware was not applied.
-func GetTraceID(c *fiber.Ctx) string {
+func GetTraceID(c fiber.Ctx) string {
 	id, _ := c.Locals("trace_id").(string)
 	return id
 }

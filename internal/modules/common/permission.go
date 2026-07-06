@@ -6,7 +6,7 @@ import (
 	"go-boilerplate/configs"
 	"go-boilerplate/internal/utils"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 const RoleSuperAdmin = "SUPERADMIN"
@@ -20,7 +20,7 @@ const RoleSuperAdmin = "SUPERADMIN"
 //  4. Delegates to utils.CheckPermissions(roles, path, method).
 //
 // Must be placed after GlobalAuthMiddleware so c.Locals("auth_user") is set.
-func PermissionMiddleware(c *fiber.Ctx) error {
+func PermissionMiddleware(c fiber.Ctx) error {
 	// Static-token bypass
 	if st := configs.Cfg.StaticToken; st != "" {
 		parts := strings.SplitN(c.Get("Authorization"), " ", 2)
@@ -47,7 +47,7 @@ func PermissionMiddleware(c *fiber.Ctx) error {
 	method := string(c.Method())
 	path := c.Path()
 
-	allowed, err := utils.CheckPermission(c.Context(), user.Role, path, method)
+	allowed, err := utils.CheckPermission(c.RequestCtx(), user.Role, path, method)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(authErrorResponse("Unauthorized"))
 	}
@@ -65,3 +65,5 @@ func PermissionMiddleware(c *fiber.Ctx) error {
 
 	return c.Next()
 }
+
+// fiber:context-methods migrated

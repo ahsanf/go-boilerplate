@@ -18,7 +18,7 @@ import (
 	"go-boilerplate/internal/utils"
 	"go-boilerplate/internal/utils/apperror"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -30,7 +30,7 @@ import (
 //  3. Parse optional 4th JWT segment that carries platform/role metadata.
 //  4. Verify via Firebase Admin SDK; on failure fall back to RS256 service-account JWT.
 //  5. Sets c.Locals("auth_user", AuthUser{...}) and c.Locals("email", email).
-func GlobalAuthMiddleware(c *fiber.Ctx) error {
+func GlobalAuthMiddleware(c fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
 		return authError("Authorization header is missing")
@@ -58,7 +58,7 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 			var meta struct {
 				CurrentRole string `json:"currentRole"`
 				UserId      string `json:"userId"`
-				ModuleId  string `json:"ModuleId"`
+				ModuleId    string `json:"ModuleId"`
 				WorkunitId  string `json:"workunitId"`
 			}
 			if json.Unmarshal(raw, &meta) == nil {
@@ -71,7 +71,7 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 		token = segments[0] + "." + segments[1] + "." + segments[2]
 	}
 
-	email, err := getEmailFromToken(c.Context(), token)
+	email, err := getEmailFromToken(c.RequestCtx(), token)
 	if err != nil {
 		return authError(err.Error())
 	}
@@ -80,7 +80,7 @@ func GlobalAuthMiddleware(c *fiber.Ctx) error {
 		Email:      email,
 		Role:       currentRole,
 		UserId:     userId,
-		ModuleId: ModuleId,
+		ModuleId:   ModuleId,
 		WorkunitId: workunitId,
 		Token:      token,
 	})
@@ -93,7 +93,7 @@ var HybridTokenMiddleware = GlobalAuthMiddleware
 
 // AuthTokenMiddleware validates our own HS256 JWT (SecretKey).
 // Use this for internal services that issue their own tokens.
-func AuthTokenMiddleware(c *fiber.Ctx) error {
+func AuthTokenMiddleware(c fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
 		return authError("missing authorization header")
@@ -249,3 +249,5 @@ func authErrorResponse(msg string) fiber.Map {
 		},
 	}
 }
+
+// fiber:context-methods migrated

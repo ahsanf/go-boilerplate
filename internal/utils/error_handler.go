@@ -3,7 +3,7 @@ package utils
 import (
 	"go-boilerplate/internal/utils/apperror"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"go.uber.org/zap"
 )
 
@@ -21,7 +21,7 @@ type errorResponse struct {
 	Error   errorBody `json:"error"`
 }
 
-func GlobalErrorHandler(c *fiber.Ctx, err error) error {
+func GlobalErrorHandler(c fiber.Ctx, err error) error {
 	Logger.Error("request error", zap.String("path", c.Path()), zap.Error(err))
 
 	if appErr, ok := err.(*apperror.AppError); ok {
