@@ -36,16 +36,12 @@ type AuthUser struct {
 	Email      string
 	Role       string
 	UserId     string
-	ModuleId   string
-	WorkunitId string
-	Token      string // the verified JWT (without the custom 4th segment)
+	Token      string
 }
 
 type JwtPayload struct {
 	UserId     string
 	Role       string
-	ModuleId   string
-	WorkunitId string
 }
 
 type DBName string

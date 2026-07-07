@@ -50,22 +50,19 @@ func GlobalAuthMiddleware(c fiber.Ctx) error {
 	}
 
 	// Parse optional 4th segment (base64-JSON) carrying platform metadata
-	var currentRole, userId, ModuleId, workunitId string
+	var currentRole, userId string
 	segments := strings.Split(token, ".")
 	if len(segments) > 3 {
-		raw, err := base64.RawStdEncoding.DecodeString(segments[3])
+		raw, err := base64.URLEncoding.DecodeString(segments[3])
 		if err == nil {
 			var meta struct {
-				CurrentRole string `json:"currentRole"`
+				CurrentRole string `json:"role"`
 				UserId      string `json:"userId"`
-				ModuleId    string `json:"ModuleId"`
-				WorkunitId  string `json:"workunitId"`
 			}
 			if json.Unmarshal(raw, &meta) == nil {
 				currentRole = meta.CurrentRole
 				userId = meta.UserId
-				ModuleId = meta.ModuleId
-				workunitId = meta.WorkunitId
+
 			}
 		}
 		token = segments[0] + "." + segments[1] + "." + segments[2]
@@ -80,8 +77,6 @@ func GlobalAuthMiddleware(c fiber.Ctx) error {
 		Email:      email,
 		Role:       currentRole,
 		UserId:     userId,
-		ModuleId:   ModuleId,
-		WorkunitId: workunitId,
 		Token:      token,
 	})
 
