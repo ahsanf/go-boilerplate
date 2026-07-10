@@ -89,7 +89,7 @@ func TestParseEntityFields_Basic(t *testing.T) {
 		"\tUpdatedAt time.Time     `bson:\"updated_at\"`\n" +
 		"}\n"
 
-	fields, err := parseEntityFields(writeTemp(t, src), "Product")
+	fields, err := parseEntityFields(writeTemp(t, src), "Product", "mongo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestParseEntityFields_TimeType(t *testing.T) {
 		"\tStartAt time.Time `bson:\"start_at\"`\n" +
 		"}\n"
 
-	fields, err := parseEntityFields(writeTemp(t, src), "Event")
+	fields, err := parseEntityFields(writeTemp(t, src), "Event", "mongo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestParseEntityFields_FallbackBsonTag(t *testing.T) {
 		"\tWorkunitId string\n" +
 		"}\n"
 
-	fields, err := parseEntityFields(writeTemp(t, src), "Foo")
+	fields, err := parseEntityFields(writeTemp(t, src), "Foo", "mongo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestParseEntityFields_SystemFieldsExcluded(t *testing.T) {
 		"\tUpdatedAt time.Time `bson:\"updated_at\"`\n" +
 		"}\n"
 
-	fields, err := parseEntityFields(writeTemp(t, src), "Bare")
+	fields, err := parseEntityFields(writeTemp(t, src), "Bare", "mongo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,14 +206,14 @@ func TestParseEntityFields_SystemFieldsExcluded(t *testing.T) {
 func TestParseEntityFields_StructNotFound(t *testing.T) {
 	src := "package testpkg\n\ntype Foo struct{ Name string }\n"
 
-	_, err := parseEntityFields(writeTemp(t, src), "Bar")
+	_, err := parseEntityFields(writeTemp(t, src), "Bar", "mongo")
 	if err == nil {
 		t.Error("expected error when struct name not found in file")
 	}
 }
 
 func TestParseEntityFields_InvalidFile(t *testing.T) {
-	_, err := parseEntityFields("/nonexistent/path/entity.go", "Foo")
+	_, err := parseEntityFields("/nonexistent/path/entity.go", "Foo", "mongo")
 	if err == nil {
 		t.Error("expected error for non-existent file")
 	}

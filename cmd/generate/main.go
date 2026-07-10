@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"embed"
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"reflect"
 	"strings"
 	"text/template"
+	"time"
 	"unicode"
 )
 
@@ -20,25 +23,32 @@ var templateFS embed.FS
 
 // FieldInfo describes one non-system struct field.
 type FieldInfo struct {
-	Name     string // PascalCase Go name
-	Type     string // Go type as written in the source
-	BsonTag  string // bson field name
-	JsonTag  string // json field name (derived from bson tag)
-	ValidTag string // validate tag value (default "required")
-	ReqType  string // type used in Request struct (same as Type)
-	RespType string // type used in Response struct (string for time.Time)
-	IsTime   bool   // true when type is time.Time
+	Name         string // PascalCase Go name
+	Type         string // Go type as written in the source
+	BsonTag      string // bson/db field (column) name
+	JsonTag      string // json field name (derived from bson/db tag)
+	ValidTag     string // validate tag value (default "required")
+	ReqType      string // type used in Request struct (same as Type)
+	RespType     string // type used in Response struct (string for time.Time)
+	IsTime       bool   // true when type is time.Time
+	PGColumnType string // Postgres column type (only set when --db=postgres)
 }
 
 // TemplateData is passed into every .tmpl file.
 type TemplateData struct {
-	ModulePath  string
-	Package     string
-	Domain      string
-	DomainSnake string
-	DomainKebab string
+	ModulePath   string
+	Package      string
+	Domain       string
+	DomainSnake  string
+	DomainKebab  string
 	DomainPlural string
-	Fields      []FieldInfo
+	Fields       []FieldInfo
+
+	// Postgres-only: precomputed SQL fragments (empty for --db=mongo)
+	PGInsertColumns      string
+	PGInsertPlaceholders string
+	PGUpdateSet          string
+	PGUpdateWherePH      string
 }
 
 // --- naming helpers ---
@@ -103,15 +113,20 @@ func readModulePath() string {
 
 // --- struct parser ---
 
-// systemBsonTags are fields we skip when building Request/Response (they are
-// always included via the template header/footer).
-var systemBsonTags = map[string]bool{
-	"_id":        true,
-	"created_at": true,
-	"updated_at": true,
+// systemFieldTags are fields we skip when building Request/Response (they are
+// always included via the template header/footer), keyed by --db value.
+var systemFieldTags = map[string]map[string]bool{
+	"mongo":    {"_id": true, "created_at": true, "updated_at": true},
+	"postgres": {"id": true, "created_at": true, "updated_at": true},
 }
 
-func parseEntityFields(filename, domainName string) ([]FieldInfo, error) {
+// tagNameForDB is the struct tag the field parser reads column/field names from.
+var tagNameForDB = map[string]string{
+	"mongo":    "bson",
+	"postgres": "db",
+}
+
+func parseEntityFields(filename, domainName, dbType string) ([]FieldInfo, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, nil, 0)
 	if err != nil {
@@ -132,13 +147,16 @@ func parseEntityFields(filename, domainName string) ([]FieldInfo, error) {
 			if !ok {
 				continue
 			}
-			return extractFields(st), nil
+			return extractFields(st, dbType), nil
 		}
 	}
 	return nil, fmt.Errorf("struct %q not found in %s", domainName, filename)
 }
 
-func extractFields(st *ast.StructType) []FieldInfo {
+func extractFields(st *ast.StructType, dbType string) []FieldInfo {
+	tagName := tagNameForDB[dbType]
+	systemTags := systemFieldTags[dbType]
+
 	var fields []FieldInfo
 	for _, f := range st.Fields.List {
 		if len(f.Names) == 0 {
@@ -147,15 +165,15 @@ func extractFields(st *ast.StructType) []FieldInfo {
 		name := f.Names[0].Name
 		typStr := typeExprString(f.Type)
 
-		bsonTag := toSnakeCase(name)
+		colTag := toSnakeCase(name)
 		if f.Tag != nil {
 			raw := f.Tag.Value[1 : len(f.Tag.Value)-1] // strip backticks
-			if v := reflect.StructTag(raw).Get("bson"); v != "" {
-				bsonTag = strings.Split(v, ",")[0]
+			if v := reflect.StructTag(raw).Get(tagName); v != "" {
+				colTag = strings.Split(v, ",")[0]
 			}
 		}
 
-		if systemBsonTags[bsonTag] {
+		if systemTags[colTag] {
 			continue
 		}
 
@@ -166,17 +184,67 @@ func extractFields(st *ast.StructType) []FieldInfo {
 		}
 
 		fields = append(fields, FieldInfo{
-			Name:     name,
-			Type:     typStr,
-			BsonTag:  bsonTag,
-			JsonTag:  toCamelCase(bsonTag),
-			ValidTag: "required",
-			ReqType:  typStr,
-			RespType: respType,
-			IsTime:   isTime,
+			Name:         name,
+			Type:         typStr,
+			BsonTag:      colTag,
+			JsonTag:      toCamelCase(colTag),
+			ValidTag:     "required",
+			ReqType:      typStr,
+			RespType:     respType,
+			IsTime:       isTime,
+			PGColumnType: pgColumnType(typStr),
 		})
 	}
 	return fields
+}
+
+// pgColumnType maps a Go type (as written in the source struct) to a
+// best-effort Postgres column type for the generated migration/schema comment.
+func pgColumnType(goType string) string {
+	switch goType {
+	case "string":
+		return "TEXT NOT NULL"
+	case "bool":
+		return "BOOLEAN NOT NULL"
+	case "int", "int8", "int16", "int32", "uint", "uint8", "uint16", "uint32":
+		return "INTEGER NOT NULL"
+	case "int64", "uint64":
+		return "BIGINT NOT NULL"
+	case "float32", "float64":
+		return "DOUBLE PRECISION NOT NULL"
+	case "time.Time":
+		return "TIMESTAMPTZ NOT NULL"
+	default:
+		return "TEXT NOT NULL -- TODO: verify column type for " + goType
+	}
+}
+
+// --- Postgres SQL fragment helpers (column lists, placeholders, SET clause) ---
+
+func pgInsertColumns(fields []FieldInfo) string {
+	cols := make([]string, 0, len(fields)+2)
+	for _, f := range fields {
+		cols = append(cols, f.BsonTag)
+	}
+	cols = append(cols, "created_at", "updated_at")
+	return strings.Join(cols, ", ")
+}
+
+func pgPlaceholders(n int) string {
+	ph := make([]string, n)
+	for i := range ph {
+		ph[i] = fmt.Sprintf("$%d", i+1)
+	}
+	return strings.Join(ph, ", ")
+}
+
+func pgUpdateSet(fields []FieldInfo) string {
+	sets := make([]string, 0, len(fields)+1)
+	for i, f := range fields {
+		sets = append(sets, fmt.Sprintf("%s = $%d", f.BsonTag, i+1))
+	}
+	sets = append(sets, fmt.Sprintf("updated_at = $%d", len(fields)+1))
+	return strings.Join(sets, ", ")
 }
 
 func typeExprString(expr ast.Expr) string {
@@ -209,18 +277,26 @@ func renderTemplate(tmplName string, data TemplateData, outPath string) error {
 		return fmt.Errorf("template parse error (%s): %w", tmplName, err)
 	}
 
-	f, err := os.Create(outPath)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
 		return err
 	}
-	defer f.Close()
 
-	return tmpl.Execute(f, data)
+	out := buf.Bytes()
+	if strings.HasSuffix(outPath, ".go") {
+		if formatted, err := format.Source(out); err == nil {
+			out = formatted
+		}
+		// on format error, fall through and write the unformatted source so the
+		// generator's own compiler error points at a readable file.
+	}
+
+	return os.WriteFile(outPath, out, 0o644)
 }
 
 // wireInAppGo inserts the module import and wiring lines into app.go.
 // Returns true if app.go was updated, false if skipped (not found / already wired).
-func wireInAppGo(modulePath, pkg, domain, outputDir string) bool {
+func wireInAppGo(modulePath, pkg, domain, outputDir, clientExpr string) bool {
 	const appPath = "cmd/server/main.go"
 	raw, err := os.ReadFile(appPath)
 	if err != nil {
@@ -253,8 +329,8 @@ func wireInAppGo(modulePath, pkg, domain, outputDir string) bool {
 	// 2. Insert wiring after the sentinel comment (skip if already wired).
 	const sentinel = "// --- Wire modules here ---"
 	wireBlock := fmt.Sprintf(
-		"\n\t%sRepo := %s.New%sRepository(configs.MongoClient)\n\t%sSvc  := %s.New%sService(%sRepo, utils.Log)\n\t%s.New%sHandler(app, %sSvc)",
-		pkg, pkg, domain,
+		"\n\t%sRepo := %s.New%sRepository(%s)\n\t%sSvc  := %s.New%sService(%sRepo, utils.Log)\n\t%s.New%sHandler(app, %sSvc)",
+		pkg, pkg, domain, clientExpr,
 		pkg, pkg, domain, pkg,
 		pkg, domain, pkg,
 	)
@@ -277,15 +353,28 @@ func wireInAppGo(modulePath, pkg, domain, outputDir string) bool {
 
 // --- main ---
 
+// dbClientExpr is the wiring expression for each supported --db value, e.g.
+// `fooRepo := foo.NewFooRepository(<expr>)`.
+var dbClientExpr = map[string]string{
+	"mongo":    "configs.MongoClient",
+	"postgres": "configs.PostgresPool",
+}
+
 func main() {
 	domain := flag.String("domain", "", "Domain name in PascalCase, e.g. Product (required)")
 	entityFile := flag.String("file", "", "Path to an existing Go entity file to parse struct fields from (optional)")
 	outDir := flag.String("out", "", "Output directory (default: modules/<snake_domain>)")
+	dbType := flag.String("db", "mongo", "Database driver: mongo | postgres")
 	flag.Parse()
 
 	if *domain == "" {
 		fmt.Fprintln(os.Stderr, "error: --domain is required")
 		flag.Usage()
+		os.Exit(1)
+	}
+
+	if _, ok := dbClientExpr[*dbType]; !ok {
+		fmt.Fprintf(os.Stderr, "error: --db must be one of: mongo, postgres (got %q)\n", *dbType)
 		os.Exit(1)
 	}
 
@@ -306,7 +395,7 @@ func main() {
 	var fields []FieldInfo
 	if *entityFile != "" {
 		var err error
-		fields, err = parseEntityFields(*entityFile, *domain)
+		fields, err = parseEntityFields(*entityFile, *domain, *dbType)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not parse fields from %s: %v\n", *entityFile, err)
 			fmt.Fprintln(os.Stderr, "generating with empty fields — fill in entity.go manually")
@@ -323,16 +412,33 @@ func main() {
 		Fields:       fields,
 	}
 
+	if *dbType == "postgres" {
+		data.PGInsertColumns = pgInsertColumns(fields)
+		data.PGInsertPlaceholders = pgPlaceholders(len(fields) + 2)
+		data.PGUpdateSet = pgUpdateSet(fields)
+		data.PGUpdateWherePH = fmt.Sprintf("$%d", len(fields)+2)
+	}
+
 	type outFile struct {
 		tmpl string
 		name string
 	}
 
-	files := []outFile{
-		{"entity.tmpl", "entity.go"},
-		{"repository.tmpl", "repository.go"},
-		{"service.tmpl", "service.go"},
-		{"handler.tmpl", "handler.go"},
+	var files []outFile
+	if *dbType == "postgres" {
+		files = []outFile{
+			{"entity-postgres.tmpl", "entity.go"},
+			{"repository-postgres.tmpl", "repository.go"},
+			{"service-postgres.tmpl", "service.go"},
+			{"handler.tmpl", "handler.go"},
+		}
+	} else {
+		files = []outFile{
+			{"entity.tmpl", "entity.go"},
+			{"repository.tmpl", "repository.go"},
+			{"service.tmpl", "service.go"},
+			{"handler.tmpl", "handler.go"},
+		}
 	}
 
 	for _, of := range files {
@@ -342,6 +448,17 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("created  %s\n", outPath)
+	}
+
+	var migrationPath string
+	if *dbType == "postgres" {
+		var err error
+		migrationPath, err = writeMigration(data)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not write migration: %v\n", err)
+		} else {
+			fmt.Printf("created  %s\n", migrationPath)
+		}
 	}
 
 	// Remove the source entity file now that fields have been extracted and
@@ -354,21 +471,38 @@ func main() {
 		}
 	}
 
-	wired := wireInAppGo(data.ModulePath, pkg, *domain, outputDir)
+	clientExpr := dbClientExpr[*dbType]
+	wired := wireInAppGo(data.ModulePath, pkg, *domain, outputDir, clientExpr)
 
 	fmt.Println()
-	fmt.Printf("✔  Module %q generated in %s\n", *domain, outputDir)
+	fmt.Printf("✔  Module %q generated in %s (db=%s)\n", *domain, outputDir, *dbType)
 	fmt.Println()
 	fmt.Println("Next steps:")
+	step := 1
 	if !wired {
-		fmt.Printf("  1. Wire in app.go:\n")
-		fmt.Printf("       %sRepo := %s.New%sRepository(configs.MongoClient)\n", pkg, pkg, *domain)
+		fmt.Printf("  %d. Wire in app.go:\n", step)
+		fmt.Printf("       %sRepo := %s.New%sRepository(%s)\n", pkg, pkg, *domain, clientExpr)
 		fmt.Printf("       %sSvc  := %s.New%sService(%sRepo, utils.Log)\n", pkg, pkg, *domain, pkg)
 		fmt.Printf("       %s.New%sHandler(app, %sSvc)\n", pkg, *domain, pkg)
-		fmt.Printf("  2. Add the import:  \"%s/%s\"\n", data.ModulePath, strings.ReplaceAll(outputDir, "\\", "/"))
-		fmt.Println("  3. Run: go mod tidy && swag init")
-	} else {
-		fmt.Println("  1. Run: go mod tidy && swag init")
+		fmt.Printf("  %d. Add the import:  \"%s/%s\"\n", step+1, data.ModulePath, strings.ReplaceAll(outputDir, "\\", "/"))
+		step += 2
 	}
+	if *dbType == "postgres" && migrationPath != "" {
+		fmt.Printf("  %d. Run the migration against your Postgres database: psql $POSTGRES_URL -f %s\n", step, migrationPath)
+		step++
+	}
+	fmt.Printf("  %d. Run: go mod tidy && swag init\n", step)
+}
+
+// writeMigration renders the Postgres CREATE TABLE migration into
+// scripts/migrations/<timestamp>_create_<table>.sql.
+func writeMigration(data TemplateData) (string, error) {
+	const dir = "scripts/migrations"
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	name := fmt.Sprintf("%s_create_%s.sql", time.Now().Format("20060102150405"), data.DomainPlural)
+	outPath := filepath.Join(dir, name)
+	return outPath, renderTemplate("migration-postgres.tmpl", data, outPath)
 }
 

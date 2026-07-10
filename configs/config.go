@@ -9,6 +9,7 @@ type AppConfig struct {
 	Port             string
 	MongoURI         string
 	MongoCredentials string
+	PostgresURL      string
 	SecretKey        string
 	PubSubProjectID  string
 	StaticToken      string
@@ -27,6 +28,7 @@ func LoadConfig() {
 		Port:             envOrDefault("PORT", "3000"),
 		MongoURI:         os.Getenv("MONGO_URI"),
 		MongoCredentials: os.Getenv("MONGO_CREDENTIALS"),
+		PostgresURL:      os.Getenv("POSTGRES_URL"),
 		SecretKey:        os.Getenv("SECRET_KEY"),
 		PubSubProjectID:  os.Getenv("PUBSUB_PROJECT_ID"),
 		StaticToken:      os.Getenv("STATIC_TOKEN"),

@@ -1,0 +1,25 @@
+package [[.Package]]
+
+import (
+	"time"
+)
+
+// [[.Domain]] maps 1:1 to the "[[.DomainPlural]]" table (matched by column name
+// via pgx.RowToStructByName). Schema: scripts/migrations/*_create_[[.DomainPlural]].sql
+type [[.Domain]] struct {
+	ID        int64     `db:"id"`
+[[range .Fields]]	[[.Name]] [[.Type]] `db:"[[.BsonTag]]"`
+[[end]]	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
+}
+
+type [[.Domain]]Request struct {
+[[range .Fields]]	[[.Name]] [[.ReqType]] `validate:"[[.ValidTag]]" json:"[[.JsonTag]]"`
+[[end]]}
+
+type [[.Domain]]Response struct {
+	ID string `json:"id"`
+[[range .Fields]]	[[.Name]] [[.RespType]] `json:"[[.JsonTag]]"`
+[[end]]	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}

@@ -1,0 +1,155 @@
+package [[.Package]]
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+
+	"[[.ModulePath]]/internal/modules/common"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const tableName = "[[.DomainPlural]]" // TODO: rename if it doesn't match your migration
+
+// sortableColumns whitelists ORDER BY targets so filter.SortBy (user input) can
+// never be interpolated into SQL unchecked.
+var sortableColumns = map[string]bool{
+	"id":         true,
+	"created_at": true,
+	"updated_at": true,
+[[range .Fields]]	"[[.BsonTag]]": true,
+[[end]]}
+
+func sortColumn(field string) string {
+	if sortableColumns[field] {
+		return field
+	}
+	return "updated_at"
+}
+
+type [[.Domain]]Repository interface {
+	GetAll(ctx context.Context, filter common.Filter) ([][[.Domain]], error)
+	Count(ctx context.Context, filter common.Filter) (int64, error)
+	GetByID(ctx context.Context, id string) ([[.Domain]], error)
+	Create(ctx context.Context, data *[[.Domain]]) error
+	Update(ctx context.Context, data *[[.Domain]]) error
+	Delete(ctx context.Context, id string) error
+}
+
+type [[.Domain]]RepositoryImpl struct {
+	db *pgxpool.Pool
+}
+
+func New[[.Domain]]Repository(db *pgxpool.Pool) [[.Domain]]Repository {
+	return &[[.Domain]]RepositoryImpl{db: db}
+}
+
+func (r *[[.Domain]]RepositoryImpl) GetAll(ctx context.Context, filter common.Filter) ([][[.Domain]], error) {
+	sortDir := "ASC"
+	if filter.SortType == "desc" {
+		sortDir = "DESC"
+	}
+
+	// TODO: add a WHERE ... ILIKE clause on searchable columns when filter.Search != ""
+	query := fmt.Sprintf(`SELECT * FROM %s ORDER BY %s %s LIMIT $1 OFFSET $2`,
+		tableName, sortColumn(filter.SortBy), sortDir)
+
+	rows, err := r.db.Query(ctx, query, filter.Limit, (filter.Page-1)*filter.Limit)
+	if err != nil {
+		return [][[.Domain]]{}, err
+	}
+
+	results, err := pgx.CollectRows(rows, pgx.RowToStructByName[ [[.Domain]] ])
+	if err != nil {
+		return [][[.Domain]]{}, err
+	}
+	if results == nil {
+		return [][[.Domain]]{}, nil
+	}
+	return results, nil
+}
+
+func (r *[[.Domain]]RepositoryImpl) Count(ctx context.Context, filter common.Filter) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)).Scan(&count)
+	return count, err
+}
+
+func (r *[[.Domain]]RepositoryImpl) GetByID(ctx context.Context, id string) ([[.Domain]], error) {
+	oid, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return [[.Domain]]{}, errors.New("invalid id")
+	}
+
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`SELECT * FROM %s WHERE id = $1`, tableName), oid)
+	if err != nil {
+		return [[.Domain]]{}, err
+	}
+
+	result, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[ [[.Domain]] ])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return [[.Domain]]{}, errors.New("[[.DomainSnake]] not found")
+	}
+	return result, err
+}
+
+func (r *[[.Domain]]RepositoryImpl) Create(ctx context.Context, data *[[.Domain]]) error {
+	query := fmt.Sprintf(`INSERT INTO %s ([[.PGInsertColumns]]) VALUES ([[.PGInsertPlaceholders]]) RETURNING *`, tableName)
+
+	rows, err := r.db.Query(ctx, query,
+[[range .Fields]]		data.[[.Name]],
+[[end]]		data.CreatedAt,
+		data.UpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	created, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[ [[.Domain]] ])
+	if err != nil {
+		return err
+	}
+	*data = created
+	return nil
+}
+
+func (r *[[.Domain]]RepositoryImpl) Update(ctx context.Context, data *[[.Domain]]) error {
+	query := fmt.Sprintf(`UPDATE %s SET [[.PGUpdateSet]] WHERE id = [[.PGUpdateWherePH]] RETURNING *`, tableName)
+
+	rows, err := r.db.Query(ctx, query,
+[[range .Fields]]		data.[[.Name]],
+[[end]]		data.UpdatedAt,
+		data.ID,
+	)
+	if err != nil {
+		return err
+	}
+
+	updated, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[ [[.Domain]] ])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("[[.DomainSnake]] not found")
+	}
+	if err != nil {
+		return err
+	}
+	*data = updated
+	return nil
+}
+
+func (r *[[.Domain]]RepositoryImpl) Delete(ctx context.Context, id string) error {
+	oid, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return errors.New("invalid id")
+	}
+
+	tag, err := r.db.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, tableName), oid)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("[[.DomainSnake]] not found")
+	}
+	return nil
+}

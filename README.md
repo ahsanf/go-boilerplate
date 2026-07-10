@@ -6,9 +6,9 @@ Production-ready REST API boilerplate built with Go, following the [Standard Go 
 
 | Layer      | Library                                                       |
 |------------|---------------------------------------------------------------|
-| HTTP       | `github.com/gofiber/fiber/v2`                                 |
+| HTTP       | `github.com/gofiber/fiber/v3`                                 |
 | Logging    | `go.uber.org/zap` (wrapped as `AppLogger`)                    |
-| Database   | `go.mongodb.org/mongo-driver/v2`                              |
+| Database   | `go.mongodb.org/mongo-driver/v2` or `github.com/jackc/pgx/v5` (Postgres) |
 | Auth       | `firebase.google.com/go/v4` + `github.com/golang-jwt/jwt/v4` |
 | RBAC       | `github.com/casbin/casbin/v2`                                 |
 | Cache      | `github.com/redis/go-redis/v9`                                |
@@ -24,14 +24,15 @@ cmd/
   server/
     main.go                     ← Fiber bootstrap, DI wiring, graceful shutdown
   generate/
-    main.go                     ← CRUD generator CLI (--domain, --file, --out)
+    main.go                     ← CRUD generator CLI (--domain, --file, --out, --db)
     main_test.go                ← Unit tests for generator helpers and field parser
-    templates/                  ← entity / repository / service / handler .tmpl files
+    templates/                  ← entity / repository / service / handler .tmpl files (mongo + postgres variants)
   catalogue/
     main.go                     ← Catalogue generator CLI (--type, --modules, --out, --dry-run)
 configs/
   config.go                     ← AppConfig struct, LoadConfig(), global Cfg
   mongodb.go                    ← ConnectDB(), global MongoClient
+  postgres.go                   ← ConnectPostgres(), global PostgresPool (pgxpool.Pool)
   redis.go                      ← InitRedis(), CacheSet/Get/Del helpers
   firebase.go                   ← InitFirebase(), global FirebaseAuth
   pubsub.go                     ← InitPubSub(), global PubSubClient
@@ -54,15 +55,16 @@ internal/
       logging.go                ← LoggingMiddleware, GetTraceID()
       pagination.go             ← CalculatePagination()
     {domain}/
-      entity.go                 ← Mongo struct, Request/Response types
-      repository.go             ← Interface + impl, raw Mongo queries
+      entity.go                 ← Mongo/Postgres struct, Request/Response types
+      repository.go             ← Interface + impl, raw Mongo queries or pgx SQL
       service.go                ← Interface + impl, business logic
       handler.go                ← Fiber routes, Swagger annotations
       subscriber.go             ← (optional) PubSub subscription handler
 deployments/
   Dockerfile                    ← Multi-stage Docker build
 docs/                           ← Swagger output (generated — do not edit)
-scripts/                        ← Build, migration, tooling scripts
+scripts/
+  migrations/                   ← CREATE TABLE .sql files (generated for --db=postgres modules)
 ```
 
 Every domain module is self-contained: entity → repository → service → handler. No circular imports across modules.
@@ -88,7 +90,8 @@ cp configs/.env.example .env
 |---------------------------------|----------------------------------------------------|
 | `PORT`                          | HTTP port (default `3000`)                         |
 | `MONGO_URI`                     | MongoDB connection string                          |
-| `DB_NAME`                       | Database name                                      |
+| `MONGO_CREDENTIALS`             | Path to a PEM file for MongoDB TLS (optional)      |
+| `POSTGRES_URL`                  | Postgres connection string (leave empty to disable) |
 | `SECRET_KEY`                    | HS256 JWT signing secret                           |
 | `GOOGLE_APPLICATION_CREDENTIALS`| Path to Google service account JSON                |
 | `GOOGLE_SERVICE_ACCOUNT`        | Used for RS256 token fallback                      |
@@ -123,11 +126,14 @@ docker run -p 3000:3000 --env-file .env go-boilerplate
 
 ## CRUD Generator
 
-Generate a complete module from an entity struct file:
+Generate a complete module from an entity struct file, for either MongoDB or Postgres:
 
 ```bash
-# Parse fields from an existing struct, generate all four files, auto-wire in main.go
+# MongoDB (default) — parse fields, generate all four files, auto-wire in main.go
 go run cmd/generate/main.go --domain=Product --file=product.go
+
+# Postgres — same, plus a CREATE TABLE migration in scripts/migrations/
+go run cmd/generate/main.go --domain=Order --file=order.go --db=postgres
 
 # Scaffold an empty entity.go to fill in manually
 go run cmd/generate/main.go --domain=Product
@@ -136,16 +142,26 @@ go run cmd/generate/main.go --domain=Product
 go run cmd/generate/main.go --domain=Product --file=product.go --out=internal/modules/catalog/product
 ```
 
+| Flag       | Description                                                  |
+|------------|----------------------------------------------------------------|
+| `--domain` | Domain name in PascalCase, e.g. `Product` (required)          |
+| `--file`   | Path to an existing entity struct to parse fields from         |
+| `--out`    | Output directory (default `internal/modules/<snake_domain>`)   |
+| `--db`     | `mongo` (default) or `postgres`                                |
+
 The generator:
 1. Parses field names and types from your entity struct using `go/ast`.
-2. Always generates all four files — `entity.go`, `repository.go`, `service.go`, `handler.go`.
-3. Derives camelCase JSON tags from bson snake_case tags automatically.
+2. Always generates all four files — `entity.go`, `repository.go`, `service.go`, `handler.go` — gofmt'd on write.
+3. Derives camelCase JSON tags from the entity's `bson` (mongo) or `db` (postgres) tags automatically.
 4. Removes the source file after extraction.
 5. Auto-wires the new module into `cmd/server/main.go`.
+6. For `--db=postgres`, also writes a `CREATE TABLE` migration to `scripts/migrations/<timestamp>_create_<table>.sql` — run it against your database before starting the app.
 
 ### Entity file format
 
-Place the file anywhere (e.g. `cmd/generate/product.go`) and point `--file` at it:
+Place the file anywhere (e.g. `cmd/generate/product.go`) and point `--file` at it.
+
+**MongoDB** — tag fields with `bson`, system fields are `_id`, `created_at`, `updated_at`:
 
 ```go
 package main
@@ -165,9 +181,24 @@ type Product struct {
 }
 ```
 
-Fields `_id`, `created_at`, `updated_at` are treated as system fields and handled automatically by the templates. All other fields are included in `ProductRequest` and `ProductResponse`.
+**Postgres** — tag fields with `db`, system fields are `id`, `created_at`, `updated_at`; `id` is a `BIGSERIAL`:
 
-Generated `ProductResponse` uses camelCase JSON keys:
+```go
+package main
+
+import "time"
+
+type Order struct {
+    ID         int64     `db:"id"`
+    CustomerID string    `db:"customer_id"`
+    Total      float64   `db:"total"`
+    Paid       bool      `db:"paid"`
+    CreatedAt  time.Time `db:"created_at"`
+    UpdatedAt  time.Time `db:"updated_at"`
+}
+```
+
+All non-system fields are included in `{Domain}Request` and `{Domain}Response`. Generated responses use camelCase JSON keys:
 
 ```json
 {
@@ -179,6 +210,13 @@ Generated `ProductResponse` uses camelCase JSON keys:
   "updatedAt": "2026-06-18T00:00:00Z"
 }
 ```
+
+### Postgres specifics
+
+- Repository code uses `github.com/jackc/pgx/v5` with `pgxpool.Pool` — no ORM, raw parameterized SQL.
+- Rows are scanned into the entity struct via `pgx.RowToStructByName`, matched by `db` tag, so the table's columns must match the struct exactly (see the generated migration).
+- `filter.SortBy` (user input) is checked against a whitelist of known columns before being interpolated into `ORDER BY` — never passed through unchecked.
+- Wire the connection once in `cmd/server/main.go` by setting `POSTGRES_URL`; `configs.ConnectPostgres(ctx)` is called automatically when it's non-empty.
 
 ### Run generator tests
 

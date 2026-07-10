@@ -37,6 +37,11 @@ func main() {
 
 	ctx := context.Background()
 
+	if configs.Cfg.PostgresURL != "" {
+		configs.ConnectPostgres(ctx)
+		defer configs.PostgresPool.Close()
+	}
+
 	if configs.Cfg.PubSubProjectID != "" {
 		configs.InitPubSub(ctx)
 		defer configs.PubSubClient.Close()
