@@ -14,9 +14,6 @@ var FirebaseAuth *auth.Client
 
 func InitFirebase(ctx context.Context) {
 	credPath := Cfg.GoogleCredPath
-	if credPath == "" {
-		credPath = Cfg.ServiceAccount
-	}
 
 	var (
 		app *firebase.App

@@ -47,7 +47,7 @@ func main() {
 		defer configs.PubSubClient.Close()
 	}
 
-	if configs.Cfg.GoogleCredPath != "" || configs.Cfg.ServiceAccount != "" {
+	if configs.Cfg.GoogleCredPath != "" {
 		configs.InitFirebase(ctx)
 	}
 

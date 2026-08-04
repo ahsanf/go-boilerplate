@@ -128,7 +128,7 @@ func getEmailFromToken(ctx context.Context, token string) (string, error) {
 	}
 
 	// Service-account RS256 fallback
-	if configs.Cfg.ServiceAccount != "" {
+	if configs.Cfg.GoogleCredPath != "" {
 		return verifyWithServiceAccount(token)
 	}
 
@@ -146,7 +146,7 @@ type saFileClaims struct {
 }
 
 func verifyWithServiceAccount(token string) (string, error) {
-	data, err := os.ReadFile(configs.Cfg.ServiceAccount)
+	data, err := os.ReadFile(configs.Cfg.GoogleCredPath)
 	if err != nil {
 		return "", fmt.Errorf("cannot read service account: %w", err)
 	}

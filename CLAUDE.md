@@ -359,7 +359,7 @@ func main() {
         defer utils.PubSubClient.Close()
     }
 
-    if utils.Cfg.GoogleCredPath != "" || utils.Cfg.ServiceAccount != "" {
+    if utils.Cfg.GoogleCredPath != "" {
         utils.InitFirebase(ctx)
     }
 
@@ -497,7 +497,6 @@ DB_NAME=
 SECRET_KEY=
 PUBSUB_PROJECT_ID=
 GOOGLE_APPLICATION_CREDENTIALS=
-GOOGLE_SERVICE_ACCOUNT=
 REDIS_ENABLE=false
 REDIS_URL=
 STATIC_TOKEN=

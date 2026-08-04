@@ -93,8 +93,7 @@ cp configs/.env.example .env
 | `MONGO_CREDENTIALS`             | Path to a PEM file for MongoDB TLS (optional)      |
 | `POSTGRES_URL`                  | Postgres connection string (leave empty to disable) |
 | `SECRET_KEY`                    | HS256 JWT signing secret                           |
-| `GOOGLE_APPLICATION_CREDENTIALS`| Path to Google service account JSON                |
-| `GOOGLE_SERVICE_ACCOUNT`        | Used for RS256 token fallback                      |
+| `GOOGLE_APPLICATION_CREDENTIALS`| Path to Google service account JSON (also used for RS256 token fallback) |
 | `REDIS_ENABLE`                  | `true` to enable Redis cache                       |
 | `REDIS_URL`                     | Redis connection URL                               |
 | `STATIC_TOKEN`                  | Optional bypass token (dev/testing only)           |

@@ -17,8 +17,7 @@ type AppConfig struct {
 	AuthAPIURL       string
 	RedisURL         string
 	RedisEnabled     bool
-	ServiceAccount   string // path to Google service account JSON (GOOGLE_SERVICE_ACCOUNT)
-	GoogleCredPath   string // GOOGLE_APPLICATION_CREDENTIALS
+	GoogleCredPath   string // path to Google service account JSON (GOOGLE_APPLICATION_CREDENTIALS)
 }
 
 var Cfg AppConfig
@@ -36,7 +35,6 @@ func LoadConfig() {
 		AuthAPIURL:       os.Getenv("AUTH_API_URL"),
 		RedisURL:         os.Getenv("REDIS_URL"),
 		RedisEnabled:     envBool("REDIS_ENABLE", false),
-		ServiceAccount:   os.Getenv("GOOGLE_SERVICE_ACCOUNT"),
 		GoogleCredPath:   os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"),
 	}
 }
