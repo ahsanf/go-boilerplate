@@ -14,7 +14,7 @@
 
 | Layer       | Library                                  |
 |-------------|------------------------------------------|
-| HTTP        | `github.com/gofiber/fiber/v2`            |
+| HTTP        | `github.com/gofiber/fiber/v3`            |
 | Logging     | `go.uber.org/zap` (wrapped as `AppLogger`) |
 | Database    | `go.mongodb.org/mongo-driver/v2`         |
 | Auth        | `firebase.google.com/go/v4` + `github.com/golang-jwt/jwt/v4` |
@@ -23,7 +23,15 @@
 | Messaging   | `cloud.google.com/go/pubsub`             |
 | Validation  | `github.com/go-playground/validator/v10` |
 | Config      | `github.com/joho/godotenv`               |
-| Swagger     | `github.com/gofiber/swagger` + `github.com/swaggo/swag` |
+| Swagger     | `github.com/gofiber/contrib/v3/swaggo` + `github.com/swaggo/swag` |
+
+### Fiber v3 notes
+
+- Handler/middleware signature: `func(c fiber.Ctx) error` — `fiber.Ctx` is an interface, never `*fiber.Ctx`.
+- Body/URI/query binding: `c.Bind().Body(&req)`, `c.Bind().URI(&p)`, `c.Bind().Query(&q)`. No `BodyParser`/`ParamsParser`/`QueryParser`.
+- Middleware imports: `github.com/gofiber/fiber/v3/middleware/...` (e.g. `cors`).
+- Contrib packages use `github.com/gofiber/contrib/v3/...`.
+- Pass `c.Context()` to services/repositories for `context.Context`.
 
 ---
 
@@ -196,7 +204,8 @@ func NewFooHandler(app *fiber.App, service FooService) {
 }
 ```
 
-- Parse body with `c.BodyParser(&req)`, then validate with `h.validator.ValidateAndReturnError(&req)`.
+- Handlers take `c fiber.Ctx` (v3: interface, **not** `*fiber.Ctx`).
+- Parse body with `c.Bind().Body(&req)` (v3 — `BodyParser` removed), then validate with `h.validator.ValidateAndReturnError(&req)`.
 - Return errors with `apperror.New("msg").NotFound()` (or the relevant builder method) — `GlobalErrorHandler` formats the structured envelope automatically.
 - Standard Fiber JSON response shape:
   ```go
@@ -331,7 +340,7 @@ type Pagination struct {
 
 ### logging.go
 
-`LoggingMiddleware` + `GetTraceID(c *fiber.Ctx) string` — see Logging section above.
+`LoggingMiddleware` + `GetTraceID(c fiber.Ctx) string` — see Logging section above.
 
 ### pagination.go
 
@@ -542,7 +551,7 @@ Every handler method needs these annotations:
 // @Router       /foos [get]
 ```
 
-Swagger is served at `/swagger/*` via `github.com/gofiber/swagger`.
+Swagger is served at `/swagger/*` via `github.com/gofiber/contrib/v3/swaggo` (imported as `swagger`).
 
 ---
 
